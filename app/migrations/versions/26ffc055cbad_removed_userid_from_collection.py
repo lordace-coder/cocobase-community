@@ -1,8 +1,8 @@
-"""create project modeloo
+"""removed userid from collection
 
-Revision ID: 1648d0267d28
+Revision ID: 26ffc055cbad
 Revises: 
-Create Date: 2025-05-09 13:40:10.549250
+Create Date: 2025-05-11 13:22:35.498617
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1648d0267d28'
+revision: str = '26ffc055cbad'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

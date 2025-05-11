@@ -4,7 +4,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.app_client import Project,AppUser
-from app.schemas.projects import ProjectInDBBase,ProjectCreate
+from app.schemas.projects import ProjectInDBBase,ProjectCreate, ProjectUpdate
 from app.services.utils import generate_api_key
 
 router = APIRouter(prefix='/project' ,dependencies=[Depends(get_current_user)])
@@ -27,3 +27,34 @@ def create_project(payload:ProjectCreate,user:User=Depends(get_current_user),db:
     db.commit()
     db.refresh(proj)
     return proj
+
+@router.delete("/{id}")
+def delete_project(id:str,db:Session = Depends(get_db),user:User = Depends(get_current_user)):
+    try:
+        db.query(Project).filter(Project.id == id,Project.user_id == user.id).delete()
+        db.commit()
+        return
+    except Exception as e:
+        raise HTTPException(400,"Error occured "+str(e))
+
+
+@router.get("/regen-api-key/{projectId}",response_model=ProjectInDBBase)
+def generate_new_api_key(projectId:str,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+        project = db.query(Project).filter(Project.id == projectId,Project.user_id == user.id).first()
+        project.api_key = generate_api_key()
+        db.add(project)
+        db.commit()
+        return project
+
+@router.patch("/{id}")
+def update_project(id:str,payload:ProjectUpdate,user:User = Depends(get_current_user),db:Session= Depends(get_db))->ProjectInDBBase:
+    project = db.query(Project).filter(Project.id == id,Project.user_id == user.id).first()
+    update_data = payload.dict(exclude_unset=True)
+
+    for key,val in update_data.items():
+        setattr(project,key,val)
+    
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project

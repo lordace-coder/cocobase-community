@@ -13,7 +13,7 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):...
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str]
+    name: Optional[str] = None
     allowed_origins: Optional[List[str]] = None
 
 class ProjectInDBBase(ProjectBase):
