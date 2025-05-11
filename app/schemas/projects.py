@@ -1,22 +1,26 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from uuid import UUID
 
+from app.schemas.user import UserSchema
+
 class ProjectBase(BaseModel):
     name: str
-    api_key: str
-    allowed_origins: Optional[List[str]]
+    api_key: Optional[str] = None  # Correct
+    allowed_origins: Optional[List[str]] = None  # Correct
 
 class ProjectCreate(ProjectBase):...
 
 class ProjectUpdate(BaseModel):
     name: Optional[str]
-    allowed_origins: Optional[List[str]]
+    allowed_origins: Optional[List[str]] = None
 
 class ProjectInDBBase(ProjectBase):
     id: UUID
     user_id: UUID
-    created_at: Optional[str]
+    created_at: Optional[datetime]
+    owner:UserSchema
 
 
 

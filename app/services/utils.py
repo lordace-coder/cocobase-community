@@ -1,3 +1,4 @@
+import secrets
 import bcrypt
 
 def hash_password(raw_password):
@@ -5,3 +6,6 @@ def hash_password(raw_password):
 
 def verify_password(raw_password, hashed_password):
     return bcrypt.checkpw(raw_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def generate_api_key():
+    return secrets.token_urlsafe(30)
