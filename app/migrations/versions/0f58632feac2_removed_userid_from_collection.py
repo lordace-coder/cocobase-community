@@ -1,8 +1,8 @@
 """removed userid from collection
 
-Revision ID: 26ffc055cbad
+Revision ID: 0f58632feac2
 Revises: 
-Create Date: 2025-05-11 13:22:35.498617
+Create Date: 2025-05-11 13:27:03.486688
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '26ffc055cbad'
+revision: str = '0f58632feac2'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -47,7 +47,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_projects_user_id'), 'projects', ['user_id'], unique=False)
     op.create_table('app_users',
-    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('id', sa.String(), nullable=False),
     sa.Column('client_id', sa.UUID(), nullable=False),
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('password_hash', sa.String(), nullable=False),
@@ -60,15 +60,12 @@ def upgrade() -> None:
     )
     op.create_table('collections',
     sa.Column('id', sa.String(), nullable=False),
-    sa.Column('user_id', sa.String(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('project_id', sa.String(), nullable=False),
     sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_collections_user_id'), 'collections', ['user_id'], unique=False)
     op.create_table('documents',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('collection_id', sa.String(), nullable=False),
@@ -88,7 +85,6 @@ def downgrade() -> None:
     op.drop_index('ix_documents_data_gin', table_name='documents', postgresql_using='gin')
     op.drop_index(op.f('ix_documents_collection_id'), table_name='documents')
     op.drop_table('documents')
-    op.drop_index(op.f('ix_collections_user_id'), table_name='collections')
     op.drop_table('collections')
     op.drop_table('app_users')
     op.drop_index(op.f('ix_projects_user_id'), table_name='projects')

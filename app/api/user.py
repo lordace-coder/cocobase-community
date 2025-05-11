@@ -13,7 +13,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)) -> UserSchema:
     # check if user exists
-    if db.query(User).filter(User.email == payload.email):
+    if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400,"Account with this email already exists.")
     # check if user exists
     user = User(**payload.dict())
@@ -21,7 +21,7 @@ def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)) -> Use
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"id": user.id, "email": user.email}
+    return user
 
 
 @router.get("/users")

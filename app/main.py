@@ -13,5 +13,6 @@ app = FastAPI(
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
 app.include_router(project.router, )
+app.include_router(collections.router, )
 # Add middleware
 app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB
