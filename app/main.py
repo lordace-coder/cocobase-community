@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import user,collections,project
+from app.api import user, collections, project
 from app.core.middleware import BodySizeLimitMiddleware
 
 app = FastAPI(
@@ -7,12 +7,17 @@ app = FastAPI(
     version="0.0.1",
     description="Api docs for COCOBASE",
     docs_url="/",
-     redoc_url=None,  
+    redoc_url=None,
+    
 )
 
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
-app.include_router(project.router, )
-app.include_router(collections.router, )
+app.include_router(
+    project.router,
+)
+app.include_router(
+    collections.router,
+)
 # Add middleware
 app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB

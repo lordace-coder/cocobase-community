@@ -137,7 +137,6 @@ def create_new_document(
     proj: tuple[Project, User] = Depends(get_project),
 ) -> DocumentSchema:
     project, _ = proj
-
     _collection = None
     # check if payload came with collection name
     if payload.collection_name and not collection:
@@ -246,3 +245,69 @@ def delete_document(
     q.delete()
     db.commit()
     return
+
+
+@router.get("/{id}/documents/{document_id}")
+def get_document(
+    id: str,
+    document_id: str,
+    proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
+) -> DocumentSchema:
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == id, Collection.project_id == proj[0].id)
+        .first()
+    )
+    q = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.collection_id == collection.id)
+        .first()
+    )
+
+    return q
+
+
+# update a document
+@router.patch("/{id}/documents/{document_id}", response_model=DocumentSchema)
+def edit_document(
+    id: str,
+    document_id: str,
+    payload: DocumentUpdateSchema,
+    proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
+) -> DocumentSchema:
+    project = proj[0]
+
+    # Verify collection exists and belongs to project
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == id, Collection.project_id == project.id)
+        .first()
+    )
+
+    if not collection:
+        raise HTTPException(
+            status_code=404,
+            detail="Collection not found or doesn't belong to this project",
+        )
+
+    # Get and verify document exists
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.collection_id == collection.id)
+        .first()
+    )
+
+    if not document:
+        raise HTTPException(
+            status_code=404, detail="Document not found in this collection"
+        )
+
+    # Update document data
+    document.data = payload.data
+
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document

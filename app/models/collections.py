@@ -27,6 +27,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    
     collection_id = Column(
         String,
         ForeignKey("collections.id", ondelete="CASCADE"),
@@ -34,6 +35,7 @@ class Document(Base):
         index=True,
     )
     data = Column(JSON, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     collection = relationship("Collection", back_populates="documents")

@@ -1,8 +1,8 @@
-"""removed userid from collection
+"""removed userid from collectiond
 
-Revision ID: 0f58632feac2
+Revision ID: 9487a0b4285d
 Revises: 
-Create Date: 2025-05-11 13:27:03.486688
+Create Date: 2025-05-12 22:49:51.132599
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0f58632feac2'
+revision: str = '9487a0b4285d'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -48,7 +48,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_projects_user_id'), 'projects', ['user_id'], unique=False)
     op.create_table('app_users',
     sa.Column('id', sa.String(), nullable=False),
-    sa.Column('client_id', sa.UUID(), nullable=False),
+    sa.Column('client_id', sa.String(), nullable=False),
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('password_hash', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
@@ -58,6 +58,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('client_id', 'email', name='uq_client_email'),
     sa.UniqueConstraint('oauth_id')
     )
+    op.create_index(op.f('ix_app_users_client_id'), 'app_users', ['client_id'], unique=False)
     op.create_table('collections',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
@@ -71,7 +72,7 @@ def upgrade() -> None:
     sa.Column('collection_id', sa.String(), nullable=False),
     sa.Column('data', sa.JSON(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['collection_id'], ['collections.id'], ),
+    sa.ForeignKeyConstraint(['collection_id'], ['collections.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_documents_collection_id'), 'documents', ['collection_id'], unique=False)
@@ -86,6 +87,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_documents_collection_id'), table_name='documents')
     op.drop_table('documents')
     op.drop_table('collections')
+    op.drop_index(op.f('ix_app_users_client_id'), table_name='app_users')
     op.drop_table('app_users')
     op.drop_index(op.f('ix_projects_user_id'), table_name='projects')
     op.drop_table('projects')

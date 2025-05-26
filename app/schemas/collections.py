@@ -17,13 +17,16 @@ class CollectionCreateSchema(CollectionBase): ...
 
 
 class DocumentCreateSchema(DocumentBase):
-    collection_name:Optional[str] = None
-
+    collection_name: Optional[str] = None
 
 
 # * UPDATE SCHEMAS
 class CollectionUpdateSchema(BaseModel):
     name: Optional[str] = None
+
+
+class DocumentUpdateSchema(BaseModel):
+    data: dict
 
 
 # * VIEW SCHEMAS
@@ -36,4 +39,20 @@ class DocumentSchema(DocumentBase):
     id: str
     collection_id: str
     created_at: datetime
-    collection:CollectionSchema
+    collection: CollectionSchema
+
+
+# * AUTH SCHEMAS
+
+class AppUserBase(BaseModel):
+    email:str
+
+class AppUserCreate(AppUserBase):
+    password:str
+
+
+class AppUser(AppUserBase):
+    id:str
+    client_id:str
+    created_at:datetime
+    
