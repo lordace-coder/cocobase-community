@@ -53,6 +53,21 @@ def delete_project(
         raise HTTPException(400, "Error occured " + str(e))
 
 
+@router.get("/{id}")
+def get_project(
+    id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+)->ProjectInDBBase:
+    try:
+        x = (
+            db.query(Project)
+            .filter(Project.id == id, Project.user_id == user.id)
+            .first()
+        )
+        return x
+    except Exception as e:
+        raise HTTPException(400, "Error occured " + str(e))
+
+
 @router.get("/regen-api-key/{projectId}", response_model=ProjectInDBBase)
 def generate_new_api_key(
     projectId: str,
