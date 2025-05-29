@@ -4,6 +4,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.app_client import Project, AppUser
+from app.schemas.collections import CollectionSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.services.utils import generate_api_key
 
@@ -56,7 +57,7 @@ def delete_project(
 @router.get("/{id}")
 def get_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
-)->ProjectInDBBase:
+) -> ProjectInDBBase:
     try:
         x = (
             db.query(Project)
@@ -110,13 +111,13 @@ def update_project(
 @router.get("/{id}/collections")
 def get_collections_in_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
-) -> list[ProjectInDBBase]:
+) -> list[CollectionSchema]:
+    from app.schemas.collections import CollectionSchema
+
     project = (
-        db.query(Project)
-        .filter(Project.id == id, Project.user_id == user.id)
-        .first()
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
-    
+
     return project.collections
