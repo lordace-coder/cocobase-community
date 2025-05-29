@@ -147,7 +147,7 @@ def get_collection_by_id(
     if not collection:
         raise HTTPException(404, "Collection not found")
 
-    return Collection
+    return collection
 
 
 # get documents in a collection
