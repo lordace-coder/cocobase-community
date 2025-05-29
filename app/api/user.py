@@ -29,6 +29,7 @@ def get_users(db: Session = Depends(get_db)) -> list[UserSchema]:
     return db.query(User).all()
 
 
+
 @router.post("/login")
 def handle_login(
     db: Session = Depends(get_db), data: OAuth2PasswordRequestForm = Depends()
@@ -47,3 +48,11 @@ def handle_login(
             return {"access_token": access_token, "token_type": "bearer"}
     else:
         raise HTTPException(404, "No Matching account for this")
+
+
+
+@router.get("/current-user")
+def get_user_details(db: Session = Depends(get_db),user: User = Depends(get_current_user))->UserSchema:
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user

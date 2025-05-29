@@ -104,3 +104,19 @@ def update_project(
     db.commit()
     db.refresh(project)
     return project
+
+
+# get collections in a project
+@router.get("/{id}/collections")
+def get_collections_in_project(
+    id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> list[ProjectInDBBase]:
+    project = (
+        db.query(Project)
+        .filter(Project.id == id, Project.user_id == user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+    
+    return project.collections
