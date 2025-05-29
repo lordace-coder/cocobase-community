@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.collections import Collection
 from app.models.user import User
 from app.models.app_client import Project, AppUser
 from app.schemas.collections import CollectionSchema
@@ -140,8 +141,8 @@ def get_documents_in_collection(
         raise HTTPException(404, "Project not found")
 
     collection = (
-        db.query(AppUser)
-        .filter(AppUser.id == collection_id, AppUser.project_id == project.id)
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
         .first()
     )
     if not collection:
