@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.app_client import Project, AppUser
 from app.schemas.collections import CollectionSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
+from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key
 
 router = APIRouter(
@@ -121,3 +122,29 @@ def get_collections_in_project(
         raise HTTPException(404, "Project not found")
 
     return project.collections
+
+
+# get documents in a collection
+@router.get("/{id}/collections/{collection_id}/documents")
+def get_documents_in_collection(
+    id: str,
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[DocumentSchema]:
+
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(AppUser)
+        .filter(AppUser.id == collection_id, AppUser.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    return collection.documents
