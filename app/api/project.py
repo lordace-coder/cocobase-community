@@ -124,6 +124,31 @@ def get_collections_in_project(
 
     return project.collections
 
+# get collection by id
+@router.get("/{id}/collections/{collection_id}")
+def get_collection_by_id(
+    id: str,
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CollectionSchema:
+
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    return Collection
+
 
 # get documents in a collection
 @router.get("/{id}/collections/{collection_id}/documents")
