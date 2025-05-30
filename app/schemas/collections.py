@@ -9,15 +9,14 @@ class CollectionBase(BaseModel):
 
 
 class DocumentBase(BaseModel):
-    data: dict
+    data: dict | None = None
 
 
 # * CREATE SCHEMAS
 class CollectionCreateSchema(CollectionBase): ...
 
 
-class DocumentCreateSchema(DocumentBase):
-    collection_name: Optional[str] = None
+class DocumentCreateSchema(DocumentBase): ...
 
 
 # * UPDATE SCHEMAS
@@ -44,15 +43,16 @@ class DocumentSchema(DocumentBase):
 
 # * AUTH SCHEMAS
 
+
 class AppUserBase(BaseModel):
-    email:str
+    email: str
+
 
 class AppUserCreate(AppUserBase):
-    password:str
+    password: str
 
 
 class AppUser(AppUserBase):
-    id:str
-    client_id:str
-    created_at:datetime
-    
+    id: str
+    client_id: str
+    created_at: datetime

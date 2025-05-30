@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.collections import Collection
+from app.models.collections import Collection, Document
 from app.models.user import User
 from app.models.app_client import Project, AppUser
-from app.schemas.collections import CollectionSchema
+from app.schemas.collections import CollectionSchema, DocumentCreateSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key
@@ -124,6 +124,7 @@ def get_collections_in_project(
 
     return project.collections
 
+
 # get collection by id
 @router.get("/{id}/collections/{collection_id}")
 def get_collection_by_id(
@@ -174,3 +175,123 @@ def get_documents_in_collection(
         raise HTTPException(404, "Collection not found")
 
     return collection.documents
+
+
+# create a new document in a project
+@router.post(
+    "/{id}/collections/{collection_id}/documents", response_model=DocumentSchema
+)
+def create_document_in_collection(
+    id: str,
+    collection_id: str,
+    payload: DocumentCreateSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DocumentSchema:
+
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    document = Document(**payload.model_dump(), collection_id=collection.id)
+
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+# delete a document in a collection
+@router.delete("/{id}/collections/{collection_id}/documents/{document_id}")
+def delete_document_in_collection(
+    id: str,
+    collection_id: str,
+    document_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    document = (
+        db.query(DocumentSchema)
+        .filter(
+            DocumentSchema.id == document_id,
+            DocumentSchema.collection_id == collection.id,
+        )
+        .first()
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    db.delete(document)
+    db.commit()
+    return {"message": "Document deleted successfully"}
+
+
+# update a document in a collection
+@router.patch("/{id}/collections/{collection_id}/documents/{document_id}")
+def update_document_in_collection(
+    id: str,
+    collection_id: str,
+    document_id: str,
+    payload: DocumentCreateSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DocumentSchema:
+
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.collection_id == collection.id)
+        .first()
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+    if not payload.data:
+        raise HTTPException(400, "No data provided to update")
+
+    # For JSONB columns, we need to assign the new data directly
+    _data = dict(document.data) if document.data else {}
+
+    _data.update(payload.data)
+    document.data = _data
+
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
