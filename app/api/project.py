@@ -224,8 +224,8 @@ def delete_document_in_collection(
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
     if not project:
-        raise HTTPException(404, "Project not found")
-
+        raise HTTPException(404, "Project not found") 
+    
     collection = (
         db.query(Collection)
         .filter(Collection.id == collection_id, Collection.project_id == project.id)
@@ -234,18 +234,14 @@ def delete_document_in_collection(
     if not collection:
         raise HTTPException(404, "Collection not found")
 
-    document = (
-        db.query(DocumentSchema)
-        .filter(
-            DocumentSchema.id == document_id,
-            DocumentSchema.collection_id == collection.id,
-        )
-        .first()
-    )
-    if not document:
-        raise HTTPException(404, "Document not found")
+    result = db.query(Document).filter(
+        Document.id == document_id,
+        Document.collection_id == collection.id,
+    ).delete()
 
-    db.delete(document)
+    if not result:
+        raise HTTPException(404, "Document not found")
+ 
     db.commit()
     return {"message": "Document deleted successfully"}
 
