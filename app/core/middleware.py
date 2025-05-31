@@ -22,11 +22,11 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 async def track_api_call(request: Request, db: Session = Depends(get_db)):
     path = request.url.path
 
-    hit = db.query(RouteHit).filter_by(route=path, date=date.today()).first()
+    hit = db.query(RouteHit).filter_by(route=path, created=date.today()).first()
     if hit:
         hit.hits += 1
     else:
-        hit = RouteHit(route=path, date=date.today(), hits=1)
+        hit = RouteHit(route=path, created=date.today(), hits=1)
         db.add(hit)
 
     db.commit()
