@@ -1,5 +1,10 @@
+from datetime import date
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, HTTPException
+from fastapi import Depends, Request, HTTPException
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.models.hits import RouteHit
+
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, max_body_size: int):
@@ -14,3 +19,14 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+async def track_api_call(request: Request, db: Session = Depends(get_db)):
+    path = request.url.path
+
+    hit = db.query(RouteHit).filter_by(route=path, date=date.today()).first()
+    if hit:
+        hit.hits += 1
+    else:
+        hit = RouteHit(route=path, date=date.today(), hits=1)
+        db.add(hit)
+
+    db.commit()

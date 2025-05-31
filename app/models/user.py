@@ -24,9 +24,14 @@ class User(Base):
     password = Column(String,)
     full_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    google_id = Column(String, unique=True, nullable=True)
-
+    google_id = Column(String, unique=True, nullable=True)    
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+
+    liked_suggestions = relationship(
+        "Suggestion",
+        secondary="suggestion_likes",
+        back_populates="liked_by_users",
+    )
 
     def set_password(self, password: str) -> None:
         self.password = hash_password(password)

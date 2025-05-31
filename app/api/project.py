@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.middleware import track_api_call
 from app.models.collections import Collection, Document
 from app.models.user import User
 from app.models.app_client import Project, AppUser
@@ -11,7 +12,7 @@ from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key
 
 router = APIRouter(
-    prefix="/project", dependencies=[Depends(get_current_user)], tags=["Project"]
+    prefix="/project", dependencies=[Depends(get_current_user),Depends(track_api_call)], tags=["Project"]
 )
 
 

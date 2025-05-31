@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.dependencies import get_project
+from app.core.middleware import track_api_call
 from app.models.app_client import Project
 from app.models.user import User
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from sqlalchemy import cast, Integer, String
 router = APIRouter(
     prefix="/collections",
     tags=["Collections"],
-    dependencies=[Depends(get_project)],
+    dependencies=[Depends(get_project), Depends(track_api_call)],
 )
 comparison_map = {
     "lte": lambda col, val: cast(col.astext, Integer) <= val,

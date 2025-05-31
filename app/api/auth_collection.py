@@ -10,8 +10,7 @@ from app.models.user import User
 from app.models.app_client import AppUser
 
 router = APIRouter(
-    prefix="/auth-collections",
-    dependencies=[Depends(get_project)],
+    prefix="/auth-collections", dependencies=[Depends(get_project)], tags=["App Client"]
 )
 
 
