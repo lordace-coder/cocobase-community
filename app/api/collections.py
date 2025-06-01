@@ -234,17 +234,32 @@ def delete_document(
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ):
+    project = proj[0]
+    # First verify collection exists and belongs to project
     collection = (
         db.query(Collection)
-        .filter(Collection.id == id, Collection.project_id == proj[0].id)
+        .filter(Collection.id == id, Collection.project_id == project.id)
         .first()
     )
-    q = db.query(Document).filter(
-        Document.id == document_id, Document.collection_id == collection.id
-    )
-    q.delete()
-    db.commit()
-    return
+    if not collection:
+        raise HTTPException(
+            status_code=404,
+            detail="Collection not found or doesn't belong to this project",
+        )
+
+    try:
+        result = (
+            db.query(Document)
+            .filter(Document.id == document_id, Document.collection_id == collection.id)
+            .delete()
+        )
+        if not result:
+            raise HTTPException(404, "Document not found in this collection")
+        db.commit()
+        return {"status": "success", "message": "Document deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to delete document: {str(e)}")
 
 
 @router.get("/{id}/documents/{document_id}")
@@ -254,18 +269,28 @@ def get_document(
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ) -> DocumentSchema:
+    project = proj[0]
+    # First verify collection exists and belongs to project
     collection = (
         db.query(Collection)
-        .filter(Collection.id == id, Collection.project_id == proj[0].id)
+        .filter(Collection.id == id, Collection.project_id == project.id)
         .first()
     )
-    q = (
+    if not collection:
+        raise HTTPException(
+            status_code=404,
+            detail="Collection not found or doesn't belong to this project",
+        )
+
+    document = (
         db.query(Document)
         .filter(Document.id == document_id, Document.collection_id == collection.id)
         .first()
     )
+    if not document:
+        raise HTTPException(404, "Document not found in this collection")
 
-    return q
+    return document
 
 
 # update a document
