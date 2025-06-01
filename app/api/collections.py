@@ -238,7 +238,10 @@ def delete_document(
     # First verify collection exists and belongs to project
     collection = (
         db.query(Collection)
-        .filter(Collection.id == id, Collection.project_id == project.id)
+        .filter(
+            (Collection.id == id | Collection.name == id),
+            Collection.project_id == project.id,
+        )
         .first()
     )
     if not collection:
@@ -273,7 +276,10 @@ def get_document(
     # First verify collection exists and belongs to project
     collection = (
         db.query(Collection)
-        .filter(Collection.id == id, Collection.project_id == project.id)
+        .filter(
+            (Collection.id == id | Collection.name == id),
+            Collection.project_id == project.id,
+        )
         .first()
     )
     if not collection:
