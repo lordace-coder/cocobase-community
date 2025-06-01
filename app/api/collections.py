@@ -138,13 +138,12 @@ def create_new_document(
     proj: tuple[Project, User] = Depends(get_project),
 ) -> DocumentSchema:
     project, _ = proj
-    _collection = None
-    # check if collection identifier was provided
+    _collection = None  # check if collection identifier was provided
     if not collection:
         raise HTTPException(400, "Invalid collection, collection name or id required")
 
     # Try to find existing collection by ID or name
-    existing_collection = (
+    _collection = (
         db.query(Collection)
         .filter(
             ((Collection.id == collection) | (Collection.name == collection)),
@@ -153,24 +152,8 @@ def create_new_document(
         .first()
     )
 
-    # If payload has collection_name and collection wasn't found, create new one
-    if (
-        not existing_collection
-        and hasattr(payload, "collection_name")
-        and payload.collection_name
-    ):
-        existing_collection = Collection(
-            name=payload.collection_name,
-            project_id=project.id,
-            project=project,
-        )
-        db.add(existing_collection)
-        db.commit()
-        db.refresh(existing_collection)
-    elif not existing_collection:
+    if not _collection:
         raise HTTPException(404, "No matching collection was found")
-
-    _collection = existing_collection
     if not payload.data:
         raise HTTPException(400, "Document data is required")
 
