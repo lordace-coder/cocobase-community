@@ -239,7 +239,7 @@ def delete_document(
     collection = (
         db.query(Collection)
         .filter(
-            (Collection.id == id | Collection.name == id),
+            ((Collection.id == id) | (Collection.name == id)),
             Collection.project_id == project.id,
         )
         .first()
@@ -277,7 +277,7 @@ def get_document(
     collection = (
         db.query(Collection)
         .filter(
-            (Collection.id == id | Collection.name == id),
+            ((Collection.id == id) | (Collection.name == id)),
             Collection.project_id == project.id,
         )
         .first()
