@@ -140,7 +140,7 @@ def create_new_document(
     project, _ = proj
     _collection = None
     # check if payload came with collection name
-    if payload.collection_name and not collection:
+    if collection:
         # create new collection if it doesnt exist else just connect to it
         query = db.query(Collection).filter(
             Collection.project_id == project.id, payload.name == Collection.name
