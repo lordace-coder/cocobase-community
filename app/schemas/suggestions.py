@@ -4,7 +4,7 @@ from typing import List
 
 
 class SuggestionBase(BaseModel):
-    name: str
+    name: str | None = None
     description: str
 
 
@@ -17,4 +17,3 @@ class SuggestionSchema(SuggestionBase):
     created_at: datetime
     likes_count: int = 0
     has_liked: bool = False
-

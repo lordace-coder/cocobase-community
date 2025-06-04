@@ -35,14 +35,18 @@ def get_project_data(db: Session = Depends(get_db)) -> ProjectData:
 
 
 # Suggestions endpoints
-@router.post("/suggestions", response_model=SuggestionSchema, status_code=201)
+@router.post(
+    "/suggestions",
+    response_model=SuggestionSchema,
+    status_code=201,
+)
 def create_suggestion(
     payload: SuggestionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SuggestionSchema:
     """Create a new suggestion."""
-    suggestion = Suggestion(**payload.model_dump())
+    suggestion = Suggestion(**payload.model_dump(), name=current_user.full_name)
     db.add(suggestion)
 
     try:
