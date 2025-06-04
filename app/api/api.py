@@ -49,7 +49,12 @@ def create_suggestion(
     suggestion = Suggestion(
         **payload.model_dump(),
     )
-    suggestion.name = current_user.full_name
+    name = "Anonymous User"
+    if current_user.full_name:
+        name = current_user.full_name
+    else:
+        name = current_user.username
+    suggestion.name = name
     db.add(suggestion)
 
     try:
