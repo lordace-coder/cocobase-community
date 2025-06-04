@@ -46,7 +46,10 @@ def create_suggestion(
     current_user: User = Depends(get_current_user),
 ) -> SuggestionSchema:
     """Create a new suggestion."""
-    suggestion = Suggestion(**payload.model_dump(), name=current_user.full_name)
+    suggestion = Suggestion(
+        **payload.model_dump(),
+    )
+    suggestion.name = current_user.full_name
     db.add(suggestion)
 
     try:
