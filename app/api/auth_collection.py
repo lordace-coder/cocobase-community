@@ -9,9 +9,7 @@ from app.models.app_client import Project
 from app.models.user import User
 from app.models.app_client import AppUser
 
-router = APIRouter(
-    prefix="/auth-collections", dependencies=[Depends(get_project)], tags=["App Client"]
-)
+router = APIRouter(prefix="/auth-collections", tags=["App Client"])
 
 
 class AppUserSchema(BaseModel):
@@ -67,3 +65,27 @@ def create_new_user(
         db.commit()
         db.refresh(user)
         return {"access_token": "some token"}
+
+
+# list users
+@router.get("/users")
+def list_all_users(
+    db: Session = Depends(get_db), proj: tuple[Project, User] = Depends(get_project)
+) -> list[AppUserSchema]:
+    users = db.query(AppUser).filter(AppUser.client_id == proj[0].id)
+    return users
+
+
+# get user by id
+@router.get("users/{id}")
+def get_all_users(
+    id: str,
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+) -> AppUserSchema:
+    users = (
+        db.query(AppUser)
+        .filter(AppUser.client_id == proj[0].id, AppUser.id == id)
+        .first()
+    )
+    return users

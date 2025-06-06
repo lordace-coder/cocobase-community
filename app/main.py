@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import user, collections, project, api, auth_collection
+from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
 
 app = FastAPI(
@@ -29,6 +30,7 @@ app.include_router(
     collections.router,
 )
 app.include_router(api.router)
+app.include_router(documents.router)
 app.include_router(auth_collection.router)
 # Add middleware
 app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB

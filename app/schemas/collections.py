@@ -6,10 +6,13 @@ from typing import Optional
 
 class CollectionBase(BaseModel):
     name: str
+    model_config = {"from_attributes": True}  # replaces orm_mode = True
 
 
 class DocumentBase(BaseModel):
     data: dict | None = None
+
+    model_config = {"from_attributes": True}  # replaces orm_mode = True
 
 
 # * CREATE SCHEMAS

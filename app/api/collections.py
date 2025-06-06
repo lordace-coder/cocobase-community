@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.dependencies import get_project
@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from app.models.collections import Document, Collection
 from app.schemas.collections import *
 from sqlalchemy import cast, Integer, String
+from fastapi.encoders import jsonable_encoder
 
+from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 
 router = APIRouter(
     prefix="/collections",
@@ -54,6 +56,8 @@ def create_collection(
 
     db.add(new_collection)
     db.commit()
+    # update connections
+
     db.refresh(new_collection)
     return new_collection
 
@@ -305,6 +309,7 @@ def edit_document(
     id: str,
     document_id: str,
     payload: DocumentUpdateSchema,
+    bg: BackgroundTasks,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ) -> DocumentSchema:
@@ -313,7 +318,10 @@ def edit_document(
     # Verify collection exists and belongs to project
     collection = (
         db.query(Collection)
-        .filter( (Collection.id == id) | (Collection.name == id), Collection.project_id == project.id)
+        .filter(
+            (Collection.id == id) | (Collection.name == id),
+            Collection.project_id == project.id,
+        )
         .first()
     )
 
@@ -341,4 +349,7 @@ def edit_document(
     db.add(document)
     db.commit()
     db.refresh(document)
+    bg.add_task(
+        notify_collection_watchers, collection.id, document, RealtimeEvent.update
+    )
     return document

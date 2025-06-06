@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.api.auth_collection import AppUserSchema
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.middleware import track_api_call
@@ -10,9 +11,12 @@ from app.schemas.collections import CollectionSchema, DocumentCreateSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key
+from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 
 router = APIRouter(
-    prefix="/project", dependencies=[Depends(get_current_user),Depends(track_api_call)], tags=["Project"]
+    prefix="/project",
+    dependencies=[Depends(get_current_user), Depends(track_api_call)],
+    tags=["Project"],
 )
 
 
@@ -184,6 +188,7 @@ def get_documents_in_collection(
 )
 def create_document_in_collection(
     id: str,
+    bg: BackgroundTasks,
     collection_id: str,
     payload: DocumentCreateSchema,
     db: Session = Depends(get_db),
@@ -209,6 +214,9 @@ def create_document_in_collection(
     db.add(document)
     db.commit()
     db.refresh(document)
+    bg.add_task(
+        notify_collection_watchers, collection.id, document, RealtimeEvent.create
+    )
     return document
 
 
@@ -225,8 +233,8 @@ def delete_document_in_collection(
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
     if not project:
-        raise HTTPException(404, "Project not found") 
-    
+        raise HTTPException(404, "Project not found")
+
     collection = (
         db.query(Collection)
         .filter(Collection.id == collection_id, Collection.project_id == project.id)
@@ -235,14 +243,18 @@ def delete_document_in_collection(
     if not collection:
         raise HTTPException(404, "Collection not found")
 
-    result = db.query(Document).filter(
-        Document.id == document_id,
-        Document.collection_id == collection.id,
-    ).delete()
+    result = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.collection_id == collection.id,
+        )
+        .delete()
+    )
 
     if not result:
         raise HTTPException(404, "Document not found")
- 
+
     db.commit()
     return {"message": "Document deleted successfully"}
 
@@ -253,6 +265,7 @@ def update_document_in_collection(
     id: str,
     collection_id: str,
     document_id: str,
+    bg: BackgroundTasks,
     payload: DocumentCreateSchema,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -291,4 +304,39 @@ def update_document_in_collection(
     db.add(document)
     db.commit()
     db.refresh(document)
+    bg.add_task(
+        notify_collection_watchers, collection.id, document, RealtimeEvent.update
+    )
     return document
+
+
+# project users
+
+
+# list users
+@router.get("/{id}/users")
+def list_users(
+    id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AppUserSchema]:
+    proj = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    users = db.query(AppUser).filter(AppUser.client_id == proj.id)
+    return users
+
+
+# get user by id
+@router.get("/{id}/users/{userid}")
+def get_user(
+    id: str,
+    userid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AppUserSchema]:
+    proj = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    user = db.query(AppUser).filter(AppUser.client_id == userid).first()
+    return user
