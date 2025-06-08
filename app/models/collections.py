@@ -21,12 +21,13 @@ class Collection(Base):
         back_populates="collection",
         cascade="all, delete-orphan",
     )
+    webhook_url = Column(String, nullable=True)
 
 
 class Document(Base):
     __tablename__ = "documents"
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     collection_id = Column(
         String,
         ForeignKey("collections.id", ondelete="CASCADE"),

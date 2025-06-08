@@ -31,6 +31,7 @@ class Project(Base):
         "Collection", back_populates="project", cascade="all, delete-orphan"
     )
     allowed_origins = Column(PickleType, nullable=True)
+    callback_url = Column(String, nullable=True)
 
 
 class AppUser(Base):

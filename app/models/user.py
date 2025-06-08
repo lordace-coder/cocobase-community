@@ -1,15 +1,10 @@
 from sqlalchemy import UUID, Column, Integer, String, DateTime
 from app.core.database import Base
 from datetime import datetime
-import uuid
 from uuid import uuid4
 from sqlalchemy.orm import relationship
-
 from app.services.utils import hash_password, verify_password
 
-# This function generates a password that is unusable for authentication purposes.
-# It uses a UUID to ensure uniqueness and prepends it with a specific string.
-# This is useful for marking users who are not allowed to log in or have been deactivated.
 
 def generate_unusable_password():
     return f"!UNUSABLE-{uuid4()}"
