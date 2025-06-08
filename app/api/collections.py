@@ -12,6 +12,7 @@ from app.schemas.collections import *
 from sqlalchemy import cast, Integer, String
 from fastapi.encoders import jsonable_encoder
 
+from app.services.utils import handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 
 router = APIRouter(
@@ -137,6 +138,7 @@ def delete_collection(
 @router.post("/documents")
 def create_new_document(
     payload: DocumentCreateSchema,
+    bg: BackgroundTasks,
     collection: str | None = None,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
@@ -179,6 +181,7 @@ def create_new_document(
         db.add(new_doc)
         db.commit()
         db.refresh(new_doc)
+        bg.add_task(handle_webhook_call,_collection.webhook_url,payload.data)
         return new_doc
     except Exception as e:
         db.rollback()
@@ -352,4 +355,5 @@ def edit_document(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.update
     )
+    bg.add_task(handle_webhook_call,collection.webhook_url,payload.data,True)
     return document

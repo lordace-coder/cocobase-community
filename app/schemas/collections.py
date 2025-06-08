@@ -7,6 +7,7 @@ from typing import Optional
 class CollectionBase(BaseModel):
     name: str
     model_config = {"from_attributes": True}  # replaces orm_mode = True
+    webhook_url: Optional[str] = None
 
 
 class DocumentBase(BaseModel):

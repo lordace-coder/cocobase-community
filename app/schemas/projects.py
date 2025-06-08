@@ -7,6 +7,7 @@ from app.schemas.user import UserSchema
 
 class ProjectBase(BaseModel):
     name: str
+    callback_url:Optional[str]=None
     api_key: Optional[str] = None  # Correct
     allowed_origins: Optional[List[str]] = None  # Correct
 

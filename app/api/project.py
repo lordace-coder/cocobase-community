@@ -10,7 +10,7 @@ from app.models.app_client import Project, AppUser
 from app.schemas.collections import CollectionSchema, DocumentCreateSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
-from app.services.utils import generate_api_key
+from app.services.utils import generate_api_key, handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 
 router = APIRouter(
@@ -119,7 +119,6 @@ def update_project(
 def get_collections_in_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[CollectionSchema]:
-    from app.schemas.collections import CollectionSchema
 
     project = (
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
@@ -217,6 +216,8 @@ def create_document_in_collection(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.create
     )
+    bg.add_task(handle_webhook_call, collection.webhook_url, payload.data)
+
     return document
 
 
@@ -307,6 +308,8 @@ def update_document_in_collection(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.update
     )
+    bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
+
     return document
 
 
