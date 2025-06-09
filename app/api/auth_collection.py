@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -18,9 +19,20 @@ class AppUserSchema(BaseModel):
     password: str
     data: Optional[dict] = None
 
+
+class AppUserUpdateSchema(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    data: Optional[dict] = None
+
+
 class AppUserResponse(BaseModel):
-    email:str
-    data:Optional[dict]= None
+    email: str
+    data: Optional[dict] = None
+    client_id: str
+    created_at: datetime
+    id: str
+
 
 class AppTokenResponse(BaseModel):
     access_token: str
@@ -105,4 +117,22 @@ def get_all_users(
 def get_current_user_details(user: AppUser = Depends(get_app_user)) -> AppUserResponse:
     return user
 
+
 # update user data
+@router.patch("/user", response_model=AppUserResponse)
+def update_current_user_details(
+    payload: AppUserUpdateSchema,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(get_app_user),
+) -> AppUserResponse:
+    # Update only the fields that are set in the payload
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(user, field, value)
+
+    if payload.password:
+        user.set_password(payload.password)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user
