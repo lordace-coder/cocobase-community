@@ -42,15 +42,15 @@ class AppUser(Base):
     )
     client_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    data = Column(JSON, nullable=False)
+    password: Mapped[str] = mapped_column(String, nullable=False)
+    data = Column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     oauth_id: Mapped[str] = mapped_column(String, nullable=True, unique=True)
 
     __table_args__ = (UniqueConstraint("client_id", "email", name="uq_client_email"),)
 
     def set_password(self, password: str) -> None:
-        self.password_hash = hash_password(password)
+        self.password = hash_password(password)
 
     def compare_password(self, password: str) -> bool:
-        return verify_password(password, self.password_hash)
+        return verify_password(password, self.password)

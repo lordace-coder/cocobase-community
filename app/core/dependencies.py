@@ -3,9 +3,9 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.app_client import Project
+from app.models.app_client import AppUser, Project
 from app.models.user import User
-from app.services.jwt import decode_access_token
+from app.services.jwt import decode_access_token, decode_app_user_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -52,3 +52,30 @@ def get_project(
         )
     # todo check if this domain is included in the projects allowed domains
     return project, project.owner
+
+
+def get_app_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+):
+    payload = decode_app_user_token(token, proj[0].id)
+    print(payload, "payload")
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_id = payload.get("userId")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Token missing userId"
+        )
+    user = db.query(AppUser).filter(AppUser.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    return user
