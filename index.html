@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebSocket Debug Client</title>
+    <style>
+      body {
+        font-family: monospace;
+        padding: 20px;
+        background: #fff;
+        color: #222;
+      }
+      #log {
+        white-space: pre-wrap;
+        background: #f3f3f3;
+        padding: 10px;
+        border: 1px solid #ccc;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      #status {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🛰️ WebSocket Client</h1>
+    <p>Status: <span id="status">🔄 Connecting...</span></p>
+    <div id="log"></div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("log");
+
+      const log = (msg) => {
+        logEl.textContent += msg + "\n";
+      };
+
+      const ws = new WebSocket(
+        "ws://localhost:5000/realtime/collections/49f39295-2149-42ef-bcc7-65d363d0cf50"
+      );
+
+      ws.onopen = () => {
+        statusEl.textContent = "✅ Connected";
+        const tokenMsg = {
+          api_key: "vA6352GeZvZzC5ezC7xR2zSMddPF4oSDRfVUOW-U",
+        };
+        ws.send(JSON.stringify(tokenMsg));
+        log("📤 Sent: " + JSON.stringify(tokenMsg));
+      };
+
+      ws.onmessage = (event) => {
+        log("✅ Received: " + event.data);
+      };
+
+      ws.onerror = (event) => {
+        statusEl.textContent = "❌ Error";
+        log("❌ WebSocket error:");
+        log("🔍 readyState: " + ws.readyState); // 3 = CLOSED
+        log("🔍 Event: " + JSON.stringify(event, null, 2));
+      };
+
+      ws.onclose = (event) => {
+        statusEl.textContent = "🔌 Disconnected";
+        log(`🔌 Connection closed:`);
+        log(`   Code: ${event.code}`);
+        log(`   Reason: ${event.reason || "(no reason provided)"}`);
+        log(`   Was clean: ${event.wasClean}`);
+      };
+    </script>
+  </body>
+</html>

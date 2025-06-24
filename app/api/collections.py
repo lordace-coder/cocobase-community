@@ -182,6 +182,9 @@ def create_new_document(
         db.commit()
         db.refresh(new_doc)
         bg.add_task(handle_webhook_call,_collection.webhook_url,payload.data)
+        bg.add_task(
+            notify_collection_watchers, _collection.id, new_doc, RealtimeEvent.create
+        )
         return new_doc
     except Exception as e:
         db.rollback()
