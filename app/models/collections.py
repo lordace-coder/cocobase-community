@@ -13,7 +13,7 @@ class Collection(Base):
 
     name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
 
     project = relationship("Project", back_populates="collections")
     documents = relationship(
@@ -22,6 +22,16 @@ class Collection(Base):
         cascade="all, delete-orphan",
     )
     webhook_url = Column(String, nullable=True)
+
+    __table_args__ = (
+        (
+            Index(
+                "idx_collection_project_id_name",
+                "name",
+                "project_id",
+            )
+        ),
+    )
 
 
 class Document(Base):

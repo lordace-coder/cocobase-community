@@ -14,6 +14,9 @@ from fastapi.encoders import jsonable_encoder
 
 from app.services.utils import handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
+from fastapi_cache.decorator import cache
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 
 router = APIRouter(
     prefix="/collections",
@@ -181,7 +184,7 @@ def create_new_document(
         db.add(new_doc)
         db.commit()
         db.refresh(new_doc)
-        bg.add_task(handle_webhook_call,_collection.webhook_url,payload.data)
+        bg.add_task(handle_webhook_call, _collection.webhook_url, payload.data)
         bg.add_task(
             notify_collection_watchers, _collection.id, new_doc, RealtimeEvent.create
         )
@@ -192,7 +195,8 @@ def create_new_document(
 
 
 @router.get("/{id}/documents")
-def list_documents(
+@cache(expire=60)  # cache for 60 seconds
+async def list_documents(
     id: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -276,7 +280,8 @@ def delete_document(
 
 
 @router.get("/{id}/documents/{document_id}")
-def get_document(
+@cache(expire=60)
+async def get_document(
     id: str,
     document_id: str,
     proj: tuple[Project, User] = Depends(get_project),
@@ -358,5 +363,15 @@ def edit_document(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.update
     )
-    bg.add_task(handle_webhook_call,collection.webhook_url,payload.data,True)
+    bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
     return document
+
+
+
+
+
+# Example: Invalidate cache after document create/update/delete
+# Add after db.commit() in create_new_document, edit_document, delete_document
+# Example:
+#   db.commit()
+#   invalidate_collection_cache(_collection.id)

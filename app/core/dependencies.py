@@ -1,4 +1,5 @@
-from fastapi import Depends, HTTPException, Header, status, Request
+import time
+from fastapi import Depends, HTTPException, Header, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -10,9 +11,37 @@ from app.services.jwt import decode_access_token, decode_app_user_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+# Simple in-memory cache with TTL for DB-backed dependencies
+class TTLCache:
+    def __init__(self, ttl=60):
+        self.ttl = ttl
+        self.cache = {}
+
+    def get(self, key):
+        value, expires = self.cache.get(key, (None, 0))
+        if time.time() < expires:
+            return value
+        return None
+
+    def set(self, key, value):
+        self.cache[key] = (value, time.time() + self.ttl)
+
+    def clear(self):
+        self.cache.clear()
+
+
+project_cache = TTLCache(ttl=60)
+user_cache = TTLCache(ttl=60)
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ):
+    cached_id = user_cache.get(token)
+    if cached_id:
+        user = db.query(User).filter(User.id == cached_id).first()
+        if user:
+            return user
     payload = decode_access_token(token)
     if payload is None:
         raise HTTPException(
@@ -25,33 +54,38 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Token missing userId"
         )
-
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-
-    return db.query(User).filter(User.id == user_id).first()
+    user_cache.set(token, user_id)
+    return user
 
 
 def get_project(
     x_api_key: str = Header(...), db: Session = Depends(get_db)
 ) -> tuple[Project, User]:
+    cached_ids = project_cache.get(x_api_key)
+    if cached_ids:
+        project = db.query(Project).filter(Project.id == cached_ids[0]).first()
+        user = db.query(User).filter(User.id == cached_ids[1]).first()
+        if project and user:
+            return project, user
     if not x_api_key:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Missing the authorization header [x-api-key] ,Contact the developer or check out the documentation",
         )
     project = db.query(Project).filter(Project.api_key == x_api_key).first()
-
     if not project:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Invalid x-api-key passed in, no project with the given key was found",
         )
-    # todo check if this domain is included in the projects allowed domains
-    return project, project.owner
+    user = project.owner
+    project_cache.set(x_api_key, (project.id, user.id))
+    return project, user
 
 
 def get_app_user(
