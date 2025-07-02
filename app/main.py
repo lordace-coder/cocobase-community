@@ -58,7 +58,9 @@ class FullErrorMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(FullErrorMiddleware)
 
-@app.on_event("startup")
-async def startup():
-    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-
+@app.middleware("http")
+async def ensure_cache_init(request, call_next):
+    if FastAPICache._backend is None:
+        FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+    response = await call_next(request)
+    return response
