@@ -5,6 +5,10 @@ from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 app = FastAPI(
@@ -38,6 +42,23 @@ app.include_router(auth_collection.router)
 # Add middleware
 app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB
 
+class FullErrorMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            tb = traceback.format_exc()
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": str(exc),
+                    "traceback": tb,
+                },
+            )
+
+app.add_middleware(FullErrorMiddleware)
+
 @app.on_event("startup")
 async def startup():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+
