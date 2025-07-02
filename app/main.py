@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import user, collections, project, api, auth_collection
 from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
+
 
 app = FastAPI(
     title="CocoBase API",
@@ -34,3 +37,7 @@ app.include_router(documents.router)
 app.include_router(auth_collection.router)
 # Add middleware
 app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB
+
+@app.on_event("startup")
+async def startup():
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
