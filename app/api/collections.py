@@ -365,13 +365,3 @@ def edit_document(
     )
     bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
     return document
-
-
-
-
-
-# Example: Invalidate cache after document create/update/delete
-# Add after db.commit() in create_new_document, edit_document, delete_document
-# Example:
-#   db.commit()
-#   invalidate_collection_cache(_collection.id)

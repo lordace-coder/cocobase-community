@@ -12,10 +12,14 @@ from app.models.user import User
 from app.models.app_client import Project, AppUser
 from app.models.timeline import Suggestion, SuggestionLike
 from app.schemas.collections import CollectionSchema, DocumentCreateSchema
+from app.schemas.files import UploadedFileSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.schemas.suggestions import SuggestionCreate, SuggestionSchema
+from app.services.cloudinary import delete_file
 from app.services.utils import generate_api_key
+from app.models.files import UploadedFile, UserStorage
+
 
 router = APIRouter(tags=["API"], prefix="/api")
 
@@ -165,3 +169,86 @@ async def toggle_like_suggestion(
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to {action} suggestion: {str(e)}")
+
+
+to_mb = lambda x: round(x / (1024 * 1024), 3)
+to_kb = lambda x: round(x / 1024, 5)
+
+
+@router.get("/get-storage-data")
+def get_storage_information(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    storage_info: UserStorage = (
+        db.query(UserStorage).filter(UserStorage.user == current_user).first()
+    )
+
+    if not storage_info:
+        return {}
+    return {
+        "used_storage": to_mb(storage_info.used_storage),
+        "max_storage": to_mb(storage_info.max_storage),
+    }
+
+
+@router.get("/get-files")
+def get_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[UploadedFileSchema]:
+    my_files = db.query(UploadedFile).filter(UploadedFile.user == current_user)
+    return my_files
+
+
+class DeleteFilesRequest(BaseModel):
+    public_ids: list[str]
+
+
+@router.delete("/delete-files")
+def delete_files(
+    payload: DeleteFilesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    public_ids = payload.public_ids
+
+    if not public_ids:
+        raise HTTPException(400, detail="No files specified for deletion")
+
+    # Query files belonging to the user
+    files_to_delete = (
+        db.query(UploadedFile)
+        .filter(UploadedFile.user_id == current_user.id)
+        .filter(UploadedFile.public_id.in_(public_ids))
+        .all()
+    )
+
+    if not files_to_delete:
+        raise HTTPException(404, detail="No matching files found for deletion")
+
+    # Delete from Cloudinary
+    for file in files_to_delete:
+        try:
+            delete_file(
+                file.public_id,
+            )
+        except Exception as e:
+            raise HTTPException(500, detail=f"Cloudinary deletion error: {str(e)}")
+
+    # Delete from DB
+    for file in files_to_delete:
+        db.delete(file)
+
+    # Update used_storage
+    total_freed = sum(f.size for f in files_to_delete)
+    if current_user.storage:
+        current_user.storage.used_storage -= total_freed
+
+    db.commit()
+
+    return {
+        "deleted_count": len(files_to_delete),
+        "freed_space_bytes": total_freed,
+        "message": "Files deleted successfully",
+    }

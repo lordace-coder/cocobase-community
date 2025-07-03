@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import user, collections, project, api, auth_collection
+from app.api import user, collections, project, api, auth_collection, files
 from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
 from fastapi_cache import FastAPICache
@@ -27,6 +27,7 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
 
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
@@ -39,24 +40,27 @@ app.include_router(
 app.include_router(api.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
+app.include_router(files.router)
 # Add middleware
-app.add_middleware(BodySizeLimitMiddleware, max_body_size=1_000_000)  # ~1MB
 
-class FullErrorMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        try:
-            return await call_next(request)
-        except Exception as exc:
-            tb = traceback.format_exc()
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": str(exc),
-                    "traceback": tb,
-                },
-            )
 
-app.add_middleware(FullErrorMiddleware)
+# class FullErrorMiddleware(BaseHTTPMiddleware):
+#     async def dispatch(self, request: Request, call_next):
+#         try:
+#             return await call_next(request)
+#         except Exception as exc:
+#             tb = traceback.format_exc()
+#             return JSONResponse(
+#                 status_code=500,
+#                 content={
+#                     "error": str(exc),
+#                     "traceback": tb,
+#                 },
+#             )
+
+
+# app.add_middleware(FullErrorMiddleware)
+
 
 @app.middleware("http")
 async def ensure_cache_init(request, call_next):

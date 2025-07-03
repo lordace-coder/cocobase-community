@@ -3,6 +3,7 @@ from app.core.database import Base
 from datetime import datetime
 from uuid import uuid4
 from sqlalchemy.orm import relationship
+from app.models.files import UploadedFile, UserStorage
 from app.services.utils import hash_password, verify_password
 
 
@@ -11,16 +12,20 @@ def generate_unusable_password():
 
 
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     username = Column(String, index=True)
     email = Column(String, unique=True, index=True)
-    password = Column(String,)
+    password = Column(
+        String,
+    )
     full_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    google_id = Column(String, unique=True, nullable=True)    
-    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    google_id = Column(String, unique=True, nullable=True)
+    projects = relationship(
+        "Project", back_populates="owner", cascade="all, delete-orphan"
+    )
 
     liked_suggestions = relationship(
         "Suggestion",
@@ -33,3 +38,7 @@ class User(Base):
 
     def compare_password(self, password: str) -> bool:
         return verify_password(password, self.password)
+
+
+User.storage = relationship(UserStorage, back_populates="user", uselist=False)
+User.files = relationship(UploadedFile, back_populates="user")
