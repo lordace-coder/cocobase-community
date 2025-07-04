@@ -21,5 +21,4 @@ class UploadedFileSchema(BaseModel):
     file_type: FileType
     size: int
 
-    class Config:
-        orm_mode = True
+
