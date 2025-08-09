@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import user, collections, project, api, auth_collection, files
+from app.api import user, collections, coco_hooks, project, api, auth_collection, files
 from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
 from fastapi_cache import FastAPICache
@@ -41,6 +41,7 @@ app.include_router(api.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
 app.include_router(files.router)
+app.include_router(coco_hooks.router)
 # Add middleware
 
 
