@@ -40,7 +40,7 @@ async def get_redis() -> redis.Redis:
     Dependency function to provide Redis connection instance.
     Uses the existing Redis instance from the worker service.
     """
-    return instance
+    return instance # type: ignore
 
 
 @router.get("/new-url", response_model=WebhookURLResponse)
