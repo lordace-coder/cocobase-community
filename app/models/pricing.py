@@ -11,9 +11,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
 
-Base = declarative_base()
+from app.core.database import Base
+from app.models.app_client import Project
 
 
 class PricingPlan(Base):
@@ -45,9 +45,7 @@ class ProjectSubscription(Base):
     __tablename__ = "project_subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )  # Uses your existing Project model
+    # Uses your existing Project model
     plan_id = Column(Integer, ForeignKey("pricing_plans.id"), nullable=False)
 
     start_date = Column(DateTime(timezone=True), server_default=func.now())
@@ -66,3 +64,10 @@ class ProjectSubscription(Base):
             db.commit()
             return True
         return False
+
+
+Project.subscriptions = relationship("ProjectSubscription", back_populates="project")
+
+ProjectSubscription.project_id = Column(
+    String, ForeignKey("projects.id"), nullable=False
+)
