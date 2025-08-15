@@ -2,6 +2,7 @@
 import json
 import uuid
 import asyncio
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,6 +11,9 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 import redis.asyncio as redis
 from app.services.redis_worker import instance, REDIS_URL
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/coco-hooks", tags=["Coco Hooks"])
 
@@ -38,9 +42,22 @@ class WebhookData(BaseModel):
 async def get_redis() -> redis.Redis:
     """
     Dependency function to provide Redis connection instance.
-    Uses the existing Redis instance from the worker service.
+    Creates a new connection if the instance is not available or not async.
     """
-    return instance # type: ignore
+    try:
+        # Check if the instance is an async Redis client
+        if hasattr(instance, "publish") and asyncio.iscoroutinefunction(
+            instance.publish
+        ):
+            return instance
+        else:
+            # Create a new async Redis client
+            logger.warning("Creating new Redis connection as instance is not async")
+            return redis.from_url(REDIS_URL, decode_responses=False)
+    except Exception as e:
+        logger.error(f"Error getting Redis client: {e}")
+        # Fallback to creating a new connection
+        return redis.from_url(REDIS_URL, decode_responses=False)
 
 
 @router.get("/new-url", response_model=WebhookURLResponse)
@@ -89,6 +106,7 @@ async def receive_webhook(
     Returns:
         dict: Confirmation message with timestamp
     """
+    temp_redis = None
     try:
         # Read the request body
         body_bytes = await request.body()
@@ -106,44 +124,64 @@ async def receive_webhook(
             )
 
         # Extract request metadata
-        webhook_data = WebhookData(
-            timestamp=datetime.utcnow().isoformat() + "Z",
-            method=request.method,
-            headers=dict(request.headers),
-            body=body_content,
-            content_type=request.headers.get("content-type"),
-            query_params=dict(request.query_params),
-        )
+        webhook_data_dict = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "method": request.method,
+            "headers": dict(request.headers),
+            "body": body_content,
+            "content_type": request.headers.get("content-type"),
+            "query_params": dict(request.query_params),
+        }
 
-        # Serialize the webhook data for Redis
-        message_payload = webhook_data.json()
+        # Serialize the webhook data for Redis (avoid Pydantic model issues)
+        message_payload = json.dumps(webhook_data_dict)
+
+        # Publish to Redis pub/sub channel named after the UUID
+        channel_name = f"webhook:{webhook_uuid}"
 
         try:
-            # Publish to Redis pub/sub channel named after the UUID
-            channel_name = f"webhook:{webhook_uuid}"
+            # Try using the dependency-injected client first
+            logger.debug(f"Publishing to channel: {channel_name}")
             publish_result = await redis_client.publish(channel_name, message_payload)
+            logger.debug(f"Publish result: {publish_result}")
 
-            if publish_result is None:
+        except Exception as redis_err:
+            logger.error(f"Error with dependency Redis client: {redis_err}")
+            # Fallback: create a temporary Redis connection
+            try:
+                temp_redis = redis.from_url(REDIS_URL, decode_responses=False)
+                logger.info("Created temporary Redis connection for publish")
+                publish_result = await temp_redis.publish(channel_name, message_payload)
+                logger.debug(f"Temporary Redis publish result: {publish_result}")
+            except Exception as temp_err:
+                logger.error(f"Temporary Redis connection failed: {temp_err}")
                 raise HTTPException(
-                    status_code=500, detail="Failed to publish message to Redis"
+                    status_code=500, detail=f"Redis publish failed: {str(temp_err)}"
                 )
 
-            return {
-                "status": "received",
-                "timestamp": webhook_data.timestamp,
-                "uuid": webhook_uuid,
-                "message": "Webhook received and published successfully",
-            }
+        return {
+            "status": "received",
+            "timestamp": webhook_data_dict["timestamp"],
+            "uuid": webhook_uuid,
+            "subscribers_notified": publish_result,
+            "message": "Webhook received and published successfully",
+        }
 
-        except redis.RedisError as redis_err:
-            raise HTTPException(
-                status_code=500, detail=f"Redis publish error: {str(redis_err)}"
-            )
-
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
+        logger.error(f"Unexpected error in receive_webhook: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error processing webhook: {str(e)}"
         )
+    finally:
+        # Clean up temporary Redis connection if created
+        if temp_redis:
+            try:
+                await temp_redis.close()
+            except Exception as cleanup_err:
+                logger.error(f"Error closing temporary Redis connection: {cleanup_err}")
 
 
 @router.get("/stream/{webhook_uuid}")
@@ -172,7 +210,7 @@ async def stream_webhook_events(
         Yields:
             dict: SSE event data containing webhook information
         """
-        # Create a new Redis connection for pub/sub using configured URL
+        # Create a dedicated Redis connection for pub/sub
         pubsub_redis = redis.from_url(REDIS_URL, decode_responses=True)
         pubsub = pubsub_redis.pubsub()
 
@@ -180,6 +218,7 @@ async def stream_webhook_events(
             # Subscribe to the specific channel for this webhook UUID
             channel_name = f"webhook:{webhook_uuid}"
             await pubsub.subscribe(channel_name)
+            logger.info(f"Subscribed to channel: {channel_name}")
 
             # Send initial connection confirmation
             yield {
@@ -207,7 +246,8 @@ async def stream_webhook_events(
                         # Yield as SSE event
                         yield {"event": "webhook", "data": json.dumps(webhook_data)}
 
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"JSON decode error: {json_err}")
                         # Handle malformed JSON gracefully
                         yield {
                             "event": "error",
@@ -221,8 +261,9 @@ async def stream_webhook_events(
 
         except asyncio.CancelledError:
             # Handle client disconnection gracefully
-            pass
+            logger.info(f"Client disconnected from webhook stream: {webhook_uuid}")
         except Exception as e:
+            logger.error(f"Error in event stream: {e}")
             # Send error event to client
             yield {
                 "event": "error",
@@ -232,8 +273,12 @@ async def stream_webhook_events(
             }
         finally:
             # Clean up Redis connection
-            await pubsub.unsubscribe(channel_name)
-            await pubsub_redis.close()
+            try:
+                await pubsub.unsubscribe(channel_name)
+                await pubsub_redis.close()
+                logger.info(f"Cleaned up Redis connection for webhook: {webhook_uuid}")
+            except Exception as cleanup_err:
+                logger.error(f"Error during cleanup: {cleanup_err}")
 
     # Return SSE response with CORS headers for browser compatibility
     return EventSourceResponse(
@@ -248,22 +293,33 @@ async def stream_webhook_events(
 
 
 @router.get("/health")
-async def health_check(redis_client: redis.Redis = Depends(get_redis)):
+async def health_check():
     """
     Health check endpoint to verify service and Redis connectivity.
 
     Returns:
         dict: Service status and Redis connection status
     """
+    redis_status = "unknown"
+    temp_redis = None
+
     try:
-        # Test Redis connection
-        await redis_client.ping()
+        # Create a test Redis connection
+        temp_redis = redis.from_url(REDIS_URL)
+        await temp_redis.ping()
         redis_status = "connected"
     except Exception as e:
         redis_status = f"error: {str(e)}"
+        logger.error(f"Redis health check failed: {e}")
+    finally:
+        if temp_redis:
+            try:
+                await temp_redis.close()
+            except Exception:
+                pass
 
     return {
-        "status": "healthy",
+        "status": "healthy" if redis_status == "connected" else "degraded",
         "redis": redis_status,
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
@@ -271,9 +327,7 @@ async def health_check(redis_client: redis.Redis = Depends(get_redis)):
 
 # Additional utility endpoint to get webhook statistics (optional)
 @router.get("/stats/{webhook_uuid}")
-async def get_webhook_stats(
-    webhook_uuid: str, redis_client: redis.Redis = Depends(get_redis)
-):
+async def get_webhook_stats(webhook_uuid: str):
     """
     Get statistics about a specific webhook endpoint.
 
@@ -282,15 +336,18 @@ async def get_webhook_stats(
 
     Args:
         webhook_uuid: The unique identifier for the webhook
-        redis_client: Redis connection
 
     Returns:
         dict: Basic webhook statistics
     """
+    temp_redis = None
     try:
+        # Create a temporary Redis connection for stats
+        temp_redis = redis.from_url(REDIS_URL)
+
         # Check if the webhook channel exists by looking for subscribers
         channel_name = f"webhook:{webhook_uuid}"
-        subscriber_count = await redis_client.pubsub_numsub(channel_name)
+        subscriber_count = await temp_redis.pubsub_numsub(channel_name)
 
         return {
             "webhook_uuid": webhook_uuid,
@@ -305,6 +362,13 @@ async def get_webhook_stats(
         }
 
     except Exception as e:
+        logger.error(f"Error getting webhook stats: {e}")
         raise HTTPException(
             status_code=500, detail=f"Error retrieving webhook stats: {str(e)}"
         )
+    finally:
+        if temp_redis:
+            try:
+                await temp_redis.close()
+            except Exception:
+                pass

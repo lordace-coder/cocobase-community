@@ -32,7 +32,7 @@ class Project(Base):
     )
     allowed_origins = Column(PickleType, nullable=True)
     callback_url = Column(String, nullable=True)
-
+    subscriptions = relationship("ProjectSubscription", back_populates="project")
 
 class AppUser(Base):
     __tablename__ = "app_users"
