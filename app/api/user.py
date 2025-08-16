@@ -95,7 +95,7 @@ async def auth(code: str, db: Session = Depends(get_db)):
                 token = await client.fetch_token(
                     TOKEN_ENDPOINT,
                     code=code,
-                    redirect_uri=f"http://127.0.0.1:5000/auth/auth-google",
+                    redirect_uri=f"https://futurebase.vercel.app/auth/auth-google",
                 )
             except Exception as e:
                 print(f"Token fetch error: {e}")

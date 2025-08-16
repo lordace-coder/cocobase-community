@@ -16,7 +16,7 @@ SCOPES = ["openid", "email", "profile"]
 params = {
     "client_id": GOOGLE_CLIENT_ID,
     "response_type": "code",
-    "redirect_uri": "http://127.0.0.1:5000/auth/auth-google",
+    "redirect_uri": "https://futurebase.vercel.app/auth/auth-google",
     "scope": " ".join(SCOPES),
     "access_type": "offline",
     "prompt": "consent",
