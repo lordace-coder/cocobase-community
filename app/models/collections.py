@@ -23,6 +23,18 @@ class Collection(Base):
     )
     webhook_url = Column(String, nullable=True)
 
+    permissions = Column(
+        JSONB,
+        nullable=True,
+        default=lambda: {
+            "list": [],
+            "create": [],
+            "read": [],
+            "update": [],
+            "delete": [],
+        },
+    )
+
     __table_args__ = (
         (
             Index(
