@@ -27,7 +27,6 @@ class Collection(Base):
         JSONB,
         nullable=True,
         default=lambda: {
-            "list": [],
             "create": [],
             "read": [],
             "update": [],

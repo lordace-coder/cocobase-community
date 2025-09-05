@@ -2,8 +2,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.dependencies import get_project
+from app.core.dependencies import get_app_user, get_project
 from app.core.middleware import track_api_call
+from app.core.permissions import can_access_collection
 from app.models.app_client import Project
 from app.models.user import User
 from sqlalchemy.orm import Session
@@ -41,7 +42,7 @@ def create_collection(
 ):
     project, _ = proj
 
-    # check if collection with this name already exisit in the project
+    # check if collection with this name already exist in the project
     query = (
         db.query(Collection)
         .filter(Collection.project_id == project.id, payload.name == Collection.name)
@@ -145,6 +146,7 @@ def create_new_document(
     collection: str | None = None,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     project, _ = proj
 
@@ -174,7 +176,8 @@ def create_new_document(
         db.add(_collection)
         db.commit()
         db.refresh(_collection)
-
+    # *VERIFY APPUSER HAS REQUIRED PERMISSIONS
+    can_access_collection(_collection, "create", user)
     try:
         # Create and attach the document to the collection
         new_doc = Document(
@@ -203,6 +206,7 @@ async def list_documents(
     proj: tuple[Project, User] = Depends(get_project),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    user: AppUser = Depends(get_app_user),
 ) -> list[DocumentSchema]:
     project = proj[0]
 
@@ -217,6 +221,8 @@ async def list_documents(
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
+    # *VERIFY APPUSER HAS REQUIRED PERMISSIONS
+    can_access_collection(collection, "read", user)
     query = db.query(Document).filter(Document.collection_id == collection.id)
 
     for key, value in request.query_params.items():
@@ -247,6 +253,7 @@ def delete_document(
     document_id: str,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
+    user: AppUser = Depends(get_app_user),
 ):
     project = proj[0]
     # First verify collection exists and belongs to project
@@ -263,7 +270,8 @@ def delete_document(
             status_code=404,
             detail="Collection not found or doesn't belong to this project",
         )
-
+    # *VERIFY APPUSER HAS REQUIRED PERMISSIONS
+    can_access_collection(collection, "delete", user)
     try:
         result = (
             db.query(Document)
@@ -286,6 +294,7 @@ async def get_document(
     document_id: str,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
+    user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     project = proj[0]
     # First verify collection exists and belongs to project
@@ -302,7 +311,8 @@ async def get_document(
             status_code=404,
             detail="Collection not found or doesn't belong to this project",
         )
-
+    # *VERIFY APPUSER HAS REQUIRED PERMISSIONS
+    can_access_collection(collection, "read", user)
     document = (
         db.query(Document)
         .filter(Document.id == document_id, Document.collection_id == collection.id)
@@ -323,6 +333,7 @@ def edit_document(
     bg: BackgroundTasks,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
+    user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     project = proj[0]
 
@@ -341,7 +352,8 @@ def edit_document(
             status_code=404,
             detail="Collection not found or doesn't belong to this project",
         )
-
+    # *VERIFY APPUSER HAS REQUIRED PERMISSIONS
+    can_access_collection(collection, "update", user)
     # Get and verify document exists
     document = (
         db.query(Document)

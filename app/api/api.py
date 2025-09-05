@@ -252,3 +252,5 @@ def delete_files(
         "freed_space_bytes": total_freed,
         "message": "Files deleted successfully",
     }
+
+

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.api.auth_collection import AppUserSchema
 from app.core.database import get_db
@@ -7,11 +8,16 @@ from app.core.middleware import track_api_call
 from app.models.collections import Collection, Document
 from app.models.user import User
 from app.models.app_client import Project, AppUser
-from app.schemas.collections import CollectionSchema, DocumentCreateSchema
+from app.schemas.collections import (
+    CollectionPermissionsRequest,
+    CollectionSchema,
+    DocumentCreateSchema,
+)
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key, handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
+from app.core.config import DEFAULT_PERMISSION_DICT
 
 router = APIRouter(
     prefix="/project",
@@ -152,6 +158,12 @@ def get_collection_by_id(
     if not collection:
         raise HTTPException(404, "Collection not found")
 
+    if not collection.permissions:
+        # set and save collection permissions
+        collection.permissions = DEFAULT_PERMISSION_DICT
+        db.add(collection)
+        db.commit()
+        db.refresh(collection)
     return collection
 
 
@@ -343,3 +355,33 @@ def get_user(
     )
     user = db.query(AppUser).filter(AppUser.client_id == userid).first()
     return user
+
+
+# * FOR ADDING PERMISSIONS TO A COLLECTION
+@router.post("/{id}/collections/{collection_id}/permissions")
+def update_permissions(
+    collection_id: str,
+    id: str,
+    payload: CollectionPermissionsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CollectionSchema:
+    project = (
+        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    collection.permissions = payload.model_dump()
+    db.add(collection)
+    db.commit()
+    db.refresh(collection)
+    return collection

@@ -1,13 +1,21 @@
 from datetime import datetime
 from pydantic import BaseModel
-
+from app.core.config import DEFAULT_PERMISSION_DICT
 from typing import Optional
+
+
+class CollectionPermissionsRequest(BaseModel):
+    create: list = []
+    read: list = []
+    update: list = []
+    delete: list = []
 
 
 class CollectionBase(BaseModel):
     name: str
     model_config = {"from_attributes": True}  # replaces orm_mode = True
     webhook_url: Optional[str] = None
+    permissions: Optional[CollectionPermissionsRequest] = DEFAULT_PERMISSION_DICT
 
 
 class DocumentBase(BaseModel):
@@ -33,6 +41,8 @@ class DocumentUpdateSchema(BaseModel):
 
 
 # * VIEW SCHEMAS
+
+
 class CollectionSchema(CollectionBase):
     id: str
     created_at: datetime
