@@ -1,0 +1,167 @@
+# events/collection_events.py
+from sqlalchemy import event
+from datetime import datetime
+import re
+from models import Collection
+
+@event.listens_for(Collection, 'before_insert')
+def collection_before_insert(mapper, connection, target):
+    """Modify collection data before saving"""
+    
+    # Auto-generate slug from name
+    if target.name:
+        target.slug = generate_slug(target.name)
+    
+    # Set default description if empty
+    if not target.description:
+        target.description = f"Collection: {target.name}"
+    
+    # Ensure name is properly formatted
+    target.name = target.name.strip().title()
+    
+    # Add created_by if not set (assuming you have current user context)
+    # if not target.created_by and hasattr(g, 'current_user'):
+    #     target.created_by = g.current_user.id
+    
+    print(f"Modified collection before insert: {target.name} -> {target.slug}")
+
+@event.listens_for(Collection, 'before_update')
+def collection_before_update(mapper, connection, target):
+    """Modify collection data before updating"""
+    
+    # Update slug if name changed
+    if target.name and mapper.get_history(target, 'name').has_changes():
+        target.slug = generate_slug(target.name)
+    
+    # Auto-update modified timestamp
+    target.updated_at = datetime.utcnow()
+    
+    # Format name
+    if target.name:
+        target.name = target.name.strip().title()
+    
+    print(f"Modified collection before update: {target.name}")
+
+def generate_slug(name):
+    """Generate URL-friendly slug from name"""
+    slug = re.sub(r'[^\w\s-]', '', name.lower())
+    slug = re.sub(r'[\s_-]+', '-', slug)
+    return slug.strip('-')
+
+# More examples of data modification:
+
+@event.listens_for(Collection, 'before_insert')
+@event.listens_for(Collection, 'before_update')
+def validate_and_modify_collection(mapper, connection, target):
+    """Validate and modify collection data"""
+    
+    # Validation with modification
+    if not target.name or len(target.name.strip()) == 0:
+        raise ValueError("Collection name is required")
+    
+    # Auto-corrections
+    target.name = target.name.strip()
+    
+    # Ensure name length limits
+    if len(target.name) > 100:
+        target.name = target.name[:100]
+    
+    # Set defaults based on other fields
+    if target.is_public and not target.public_description:
+        target.public_description = f"Public collection: {target.name}"
+    
+    # Auto-generate unique identifiers
+    if not target.external_id:
+        import uuid
+        target.external_id = str(uuid.uuid4())
+
+# Working with related objects:
+@event.listens_for(Collection, 'before_insert')
+def setup_collection_defaults(mapper, connection, target):
+    """Setup default related objects"""
+    
+    # You can access related objects and modify them too
+    if target.project:
+        # Update project's last_activity
+        target.project.last_activity = datetime.utcnow()
+    
+    # Set collection order based on existing collections
+    if target.project_id:
+        # This requires a database query in the event
+        from sqlalchemy import text
+        result = connection.execute(
+            text("SELECT COUNT(*) FROM collections WHERE project_id = :project_id"),
+            {"project_id": target.project_id}
+        )
+        count = result.scalar()
+        target.sort_order = count + 1
+
+# Conditional modifications:
+@event.listens_for(Collection, 'before_update')
+def conditional_updates(mapper, connection, target):
+    """Apply conditional updates based on changes"""
+    
+    history = mapper.get_history(target, 'status')
+    if history.has_changes():
+        old_status = history.deleted[0] if history.deleted else None
+        new_status = target.status
+        
+        if old_status != 'published' and new_status == 'published':
+            target.published_at = datetime.utcnow()
+            target.published_by = getattr(target, 'current_user_id', None)
+        
+        elif new_status == 'archived':
+            target.archived_at = datetime.utcnow()
+
+# Working with JSON/dict fields:
+@event.listens_for(Collection, 'before_insert')
+@event.listens_for(Collection, 'before_update')
+def process_metadata(mapper, connection, target):
+    """Process and clean metadata JSON field"""
+    
+    if target.metadata:
+        # Ensure required keys exist
+        if 'version' not in target.metadata:
+            target.metadata['version'] = '1.0'
+        
+        if 'created_at' not in target.metadata:
+            target.metadata['created_at'] = datetime.utcnow().isoformat()
+        
+        # Clean up the metadata
+        target.metadata = {k: v for k, v in target.metadata.items() if v is not None}
+
+# Example with Project events:
+@event.listens_for(Project, 'before_insert')
+def project_before_insert(mapper, connection, target):
+    """Setup project defaults"""
+    
+    # Generate API key if not provided
+    if not target.api_key:
+        import secrets
+        target.api_key = f"pk_{secrets.token_urlsafe(32)}"
+    
+    # Set default configs
+    if not target.configs:
+        target.configs = {
+            'max_collections': 10,
+            'allow_public': False,
+            'theme': 'default'
+        }
+    
+    # Format project name
+    target.name = target.name.strip().title()
+
+# Usage example in your routes:
+def create_collection():
+    collection = Collection(
+        name="  my new collection  ",  # Will be cleaned to "My New Collection"
+        project_id=project_id
+        # slug will be auto-generated
+        # description will be set to default
+        # sort_order will be calculated
+    )
+    
+    db.session.add(collection)
+    db.session.commit()  # Events will fire here
+    
+    return collection

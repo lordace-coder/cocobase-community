@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy.orm import relationship
 from app.models.files import UploadedFile, UserStorage
 from app.services.utils import hash_password, verify_password
+from app.models.app_client import project_shares
 
 
 def generate_unusable_password():
@@ -25,6 +26,9 @@ class User(Base):
     google_id = Column(String, unique=True, nullable=True)
     projects = relationship(
         "Project", back_populates="owner", cascade="all, delete-orphan"
+    )
+    shared_projects = relationship(
+        "Project", secondary=project_shares, back_populates="shared_with"
     )
 
     liked_suggestions = relationship(

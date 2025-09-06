@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.api.auth_collection import AppUserSchema
+from app.api.auth_collection import AppUserSchema,AppUserResponse
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.middleware import track_api_call
@@ -18,6 +18,7 @@ from app.schemas.collections import DocumentSchema
 from app.services.utils import generate_api_key, handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 from app.core.config import DEFAULT_PERMISSION_DICT
+
 
 router = APIRouter(
     prefix="/project",
@@ -228,7 +229,9 @@ def create_document_in_collection(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.create
     )
-    bg.add_task(handle_webhook_call, collection.webhook_url, payload.data)
+    bg.add_task(
+        handle_webhook_call, collection.webhook_url, DocumentSchema.model_dump(document)
+    )
 
     return document
 
@@ -320,7 +323,12 @@ def update_document_in_collection(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.update
     )
-    bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
+    bg.add_task(
+        handle_webhook_call,
+        collection.webhook_url,
+        DocumentSchema.model_dump(document),
+        True,
+    )
 
     return document
 
@@ -334,7 +342,7 @@ def list_users(
     id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[AppUserSchema]:
+) -> list[AppUserResponse]:
     proj = (
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
@@ -349,11 +357,11 @@ def get_user(
     userid: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[AppUserSchema]:
+) -> list[AppUserResponse]:
     proj = (
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
-    user = db.query(AppUser).filter(AppUser.client_id == userid).first()
+    user = db.query(AppUser).filter(AppUser.client_id == id,AppUser.id == userid).first()
     return user
 
 
@@ -421,7 +429,6 @@ def add_user_roles(
 @router.post("/{project_id}/update-config")
 def update_project_config(
     project_id: str,
-    id: str,
     payload: dict,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

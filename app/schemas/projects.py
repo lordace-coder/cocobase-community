@@ -20,6 +20,8 @@ class ProjectCreate(ProjectBase): ...
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     allowed_origins: Optional[List[str]] = None
+    callback_url: Optional[str] = None
+    configs: Optional[dict] = None
 
 
 class ProjectInDBBase(ProjectBase):

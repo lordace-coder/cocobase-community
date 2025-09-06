@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Index,
     JSON,
+    Table,
     UniqueConstraint,
     func,
 )
@@ -17,22 +18,34 @@ import uuid
 
 from app.services.utils import hash_password, verify_password
 
+# Association table for shared projects
+project_shares = Table(
+    'project_shares',
+    Base.metadata,
+    Column('project_id', String, ForeignKey('projects.id'), primary_key=True),
+    Column('user_id', String, ForeignKey('users.id'), primary_key=True),
+    Column('shared_at', DateTime, server_default=func.now())
+)
+
+
+
 
 class Project(Base):
     __tablename__ = "projects"
-
+    
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     api_key = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
-    owner = relationship("User", back_populates="projects")
-    collections = relationship(
-        "Collection", back_populates="project", cascade="all, delete-orphan"
-    )
     allowed_origins = Column(PickleType, nullable=True)
     callback_url = Column(String, nullable=True)
     configs = Column(JSON, default=dict)
+    
+    # Relationships
+    owner = relationship("User", back_populates="projects")
+    collections = relationship("Collection", back_populates="project", cascade="all, delete-orphan")
+    shared_with = relationship("User", secondary=project_shares, back_populates="shared_projects")
 
 
 class AppUser(Base):
