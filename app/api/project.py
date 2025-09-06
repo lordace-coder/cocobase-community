@@ -425,6 +425,34 @@ def add_user_roles(
     return app_user
 
 
+
+@router.delete("/{project_id}/users/{id}")
+def add_user_roles(
+    project_id: str,
+    id: str,
+    payload: list,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AppUserSchema:
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+    app_user: AppUser = db.query(AppUser).filter(
+        AppUser.id == id, AppUser.client_id == project.id
+    )
+
+    if not app_user:
+        raise HTTPException(404, "App user not found")
+
+
+    db.delete(app_user)
+    db.commit()
+    return 
+
 # * UPDATE PROJECT CONFIG
 @router.post("/{project_id}/update-config")
 def update_project_config(
