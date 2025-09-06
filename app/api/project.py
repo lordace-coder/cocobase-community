@@ -427,10 +427,9 @@ def add_user_roles(
 
 
 @router.delete("/{project_id}/users/{id}")
-def add_user_roles(
+def delete_user(
     project_id: str,
     id: str,
-    payload: list,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AppUserSchema:
