@@ -1,7 +1,9 @@
+from fastapi_cache.decorator import cache
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.api.auth_collection import AppUserSchema,AppUserResponse
+from app.api.auth_collection import AppUserSchema, AppUserResponse
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.middleware import track_api_call
@@ -137,6 +139,8 @@ def get_collections_in_project(
 
 
 # get collection by id
+# cache data
+@cache(expire=60)
 @router.get("/{id}/collections/{collection_id}")
 def get_collection_by_id(
     id: str,
@@ -159,17 +163,26 @@ def get_collection_by_id(
     if not collection:
         raise HTTPException(404, "Collection not found")
 
-    if not collection.permissions:
+    if not collection.permissions or type(collection.permissions) != dict:
         # set and save collection permissions
         collection.permissions = DEFAULT_PERMISSION_DICT
         db.add(collection)
         db.commit()
         db.refresh(collection)
-    return collection
+
+    return {
+        "id": collection.id,
+        "name": collection.name,
+        "created_at": collection.created_at,
+        "documents": collection.documents,
+        "webhook_url": collection.webhook_url,
+        "permissions": collection.permissions,
+    }
 
 
 # get documents in a collection
 @router.get("/{id}/collections/{collection_id}/documents")
+@cache(expire=30)
 def get_documents_in_collection(
     id: str,
     collection_id: str,
@@ -361,7 +374,9 @@ def get_user(
     proj = (
         db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
     )
-    user = db.query(AppUser).filter(AppUser.client_id == id,AppUser.id == userid).first()
+    user = (
+        db.query(AppUser).filter(AppUser.client_id == id, AppUser.id == userid).first()
+    )
     return user
 
 
@@ -425,7 +440,6 @@ def add_user_roles(
     return app_user
 
 
-
 @router.delete("/{project_id}/users/{id}")
 def delete_user(
     project_id: str,
@@ -447,10 +461,10 @@ def delete_user(
     if not app_user:
         raise HTTPException(404, "App user not found")
 
-
     db.delete(app_user)
     db.commit()
-    return 
+    return
+
 
 # * UPDATE PROJECT CONFIG
 @router.post("/{project_id}/update-config")

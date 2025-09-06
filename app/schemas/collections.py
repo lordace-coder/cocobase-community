@@ -15,7 +15,7 @@ class CollectionBase(BaseModel):
     name: str
     model_config = {"from_attributes": True}  # replaces orm_mode = True
     webhook_url: Optional[str] = None
-    permissions: Optional[CollectionPermissionsRequest] = DEFAULT_PERMISSION_DICT
+    permissions: Optional[dict] = None
 
 
 class DocumentBase(BaseModel):
