@@ -11,6 +11,7 @@ from fastapi import HTTPException
 router = APIRouter(prefix="/collaborations", tags=["collaborations"])
 
 
+# TODO INFORM USER WHEN THEY ARE ADDED AND REMOVED FROM A PROJECT
 # add user to your project
 @router.get("/{project_id}/team-members")
 def add_team_member(
@@ -45,7 +46,7 @@ def add_team_member(
     return [
         TeamMemberSchema(
             email=member.email,
-            role="admin" if member.id == project.owner_id else "member",
+            role="admin" if member.id == project.user_id else "member",
         )
         for member in members
     ]
@@ -83,7 +84,7 @@ def remove_team_member(
     return [
         TeamMemberSchema(
             email=member.email,
-            role="admin" if member.id == project.owner_id else "member",
+            role="admin" if member.id == project.user_id else "member",
         )
         for member in members
     ]

@@ -160,3 +160,22 @@ def get_app_user(
         return None
 
     return user
+
+
+# ! THIS IS WHERE ACCESS WILL BE VERIFIED, CHECK IF THE USER HAS ACCESS TO THE PROJECT, AND RESTRICT HIS ACTIONS IN THE FUTURE
+def verify_project_access(current_user: User, project_id: str, db: Session):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    owner = project.owner
+    if project.user_id != current_user.id:
+        # Check if current_user is in shared_with
+        shared_emails = [member.email for member in project.shared_with]
+        if current_user.email not in shared_emails:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this project",
+            )
+    return project, owner, current_user

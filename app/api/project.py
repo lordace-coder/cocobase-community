@@ -2,10 +2,11 @@ from fastapi_cache.decorator import cache
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.api.auth_collection import AppUserSchema, AppUserResponse
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, verify_project_access
 from app.core.middleware import track_api_call
 from app.models.collections import Collection, Document
 from app.models.user import User
@@ -36,8 +37,8 @@ def get_all_projects(
 ) -> list[ProjectInDBBase]:
     projects = (
         db.query(Project)
-        .filter(Project.user_id == user.id)
-        .except_(Project.collections)
+        .filter(or_(Project.user_id == user.id, Project.shared_with.any(id=user.id)))
+        .all()
     )
     return projects
 
@@ -79,17 +80,11 @@ def delete_project(
 def get_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    verify: tuple[Project, User, User] = verify_project_access(user, id, db)
     try:
-        project = (
-            db.query(Project)
-            .filter(Project.id == id, Project.user_id == user.id)
-            .first()
-        )
-        if not project:
-            raise HTTPException(404, "Project not found or you don't own it.")
-
+        project, owner, current_user = verify
         # Prepare the list of team members with roles
-        team_members = [TeamMemberSchema(email=project.owner.email, role="admin")]
+        team_members = [TeamMemberSchema(email=owner.email, role="admin")]
         for member in project.shared_with:
             team_members.append(TeamMemberSchema(email=member.email, role="member"))
 
@@ -103,13 +98,14 @@ def get_project(
             "allowed_origins": project.allowed_origins,
             "callback_url": project.callback_url,
             "configs": project.configs,
-            "owner": UserSchema.model_validate(project.owner),
+            "owner": UserSchema.model_validate(owner),
             "shared_with": team_members,
         }
     except Exception as e:
         raise HTTPException(400, "Error occurred: " + str(e))
 
 
+# TODO INFORM CLIENT THAT ONLY PROJECT OWNER CAN DO THIS
 @router.get("/regen-api-key/{projectId}", response_model=ProjectInDBBase)
 def generate_new_api_key(
     projectId: str,
@@ -135,7 +131,14 @@ def update_project(
     db: Session = Depends(get_db),
 ) -> ProjectInDBBase:
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     update_data = payload.dict(exclude_unset=True)
 
@@ -155,7 +158,14 @@ def get_collections_in_project(
 ) -> list[CollectionSchema]:
 
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -166,7 +176,6 @@ def get_collections_in_project(
             db.add(collection)
             db.commit()
             db.refresh(collection)
-        print(collection.permissions)
     return project.collections
 
 
@@ -182,7 +191,14 @@ def get_collection_by_id(
 ) -> CollectionSchema:
 
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -201,7 +217,6 @@ def get_collection_by_id(
         db.add(collection)
         db.commit()
         db.refresh(collection)
-    print(collection.permissions)
     return {
         "id": collection.id,
         "name": collection.name,
@@ -223,7 +238,14 @@ def get_documents_in_collection(
 ) -> list[DocumentSchema]:
 
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -253,7 +275,14 @@ def create_document_in_collection(
 ) -> DocumentSchema:
 
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -274,8 +303,9 @@ def create_document_in_collection(
     bg.add_task(
         notify_collection_watchers, collection.id, document, RealtimeEvent.create
     )
+    pydantic_document = DocumentSchema.model_validate(document)
     bg.add_task(
-        handle_webhook_call, collection.webhook_url, DocumentSchema.model_dump(document)
+        handle_webhook_call, collection.webhook_url, pydantic_document.model_dump()
     )
 
     return document
@@ -291,7 +321,14 @@ def delete_document_in_collection(
     user: User = Depends(get_current_user),
 ):
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -333,7 +370,14 @@ def update_document_in_collection(
 ) -> DocumentSchema:
 
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -388,10 +432,17 @@ def list_users(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[AppUserResponse]:
-    proj = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
-    users = db.query(AppUser).filter(AppUser.client_id == proj.id)
+    users = db.query(AppUser).filter(AppUser.client_id == project.id)
     return users
 
 
@@ -403,9 +454,6 @@ def get_user(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[AppUserResponse]:
-    proj = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
-    )
     user = (
         db.query(AppUser).filter(AppUser.client_id == id, AppUser.id == userid).first()
     )
@@ -422,7 +470,14 @@ def update_permissions(
     user: User = Depends(get_current_user),
 ) -> CollectionSchema:
     project = (
-        db.query(Project).filter(Project.id == id, Project.user_id == user.id).first()
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
     )
     if not project:
         raise HTTPException(404, "Project not found")
@@ -453,7 +508,12 @@ def add_user_roles(
 ) -> AppUserSchema:
     project = (
         db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == user.id)
+        .filter(
+            Project.id == project_id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
         .first()
     )
     if not project:
@@ -481,7 +541,12 @@ def delete_user(
 ) -> AppUserSchema:
     project = (
         db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == user.id)
+        .filter(
+            Project.id == project_id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
         .first()
     )
     if not project:
@@ -508,7 +573,12 @@ def update_project_config(
 ):
     project = (
         db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == user.id)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
         .first()
     )
     if not project:
@@ -518,3 +588,104 @@ def update_project_config(
     db.commit()
     db.refresh(project)
     return project.configs
+
+
+class CollectionUpdateRequest(BaseModel):
+    name: str | None = None
+    webhook_url: str | None = None
+    permissions: CollectionPermissionsRequest | None = None
+    model_config = {"from_attributes": True}
+
+
+# *GET COLLECTION INITIAL CONFIGS
+@router.get(
+    "/{project_id}/collections/{collection_id}", description="Get collection configs"
+)
+def get_collection_configs(
+    project_id: str,
+    collection_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CollectionUpdateRequest:
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == project_id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+    return {
+        "webhook_url": collection.webhook_url,
+        "permissions": collection.permissions,
+        "name": collection.name,
+    }
+
+
+@router.patch("/{project_id}/collections/{collection_id}")
+def update_collection(
+    project_id: str,
+    collection_id: str,
+    payload: CollectionUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Find project with permission check
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == project_id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    # Find collection
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.project_id == project.id)
+        .first()
+    )
+    if not collection:
+        raise HTTPException(404, "Collection not found")
+
+    try:
+        # Convert Pydantic model to dict, excluding unset fields
+        update_data = payload.model_dump(exclude_unset=True)
+
+        # Alternative approach - be explicit about allowed fields
+        # allowed_fields = {'name', 'description', 'settings'}  # Define what can be updated
+        # update_data = {k: v for k, v in payload.model_dump(exclude_unset=True).items()
+        #                if k in allowed_fields}
+
+        # Update collection attributes
+        for key, value in update_data.items():
+            if hasattr(collection, key):
+                setattr(collection, key, value)
+            # Optionally raise error for invalid fields:
+            # else:
+            #     raise HTTPException(400, f"Invalid field: {key}")
+
+        db.add(collection)
+        db.commit()
+        db.refresh(collection)
+        return collection
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to update collection: {str(e)}")

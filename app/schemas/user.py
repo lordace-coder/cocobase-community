@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel
 from uuid import UUID
 
@@ -22,5 +23,5 @@ class UserSchema(UserBase):
 
 class TeamMemberSchema(BaseModel):
     email: str
-    role: str  # e.g., 'admin', 'member'
+    role: Optional[str] = None  # e.g., 'admin', 'member'
     model_config = {"from_attributes": True}
