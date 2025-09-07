@@ -17,6 +17,7 @@ from app.schemas.collections import (
 )
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
+from app.schemas.user import TeamMemberSchema, UserSchema
 from app.services.utils import generate_api_key, handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 from app.core.config import DEFAULT_PERMISSION_DICT
@@ -33,7 +34,11 @@ router = APIRouter(
 def get_all_projects(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[ProjectInDBBase]:
-    projects = db.query(Project).filter(Project.user_id == user.id)
+    projects = (
+        db.query(Project)
+        .filter(Project.user_id == user.id)
+        .except_(Project.collections)
+    )
     return projects
 
 
@@ -73,16 +78,36 @@ def delete_project(
 @router.get("/{id}")
 def get_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
-) -> ProjectInDBBase:
+):
     try:
-        x = (
+        project = (
             db.query(Project)
             .filter(Project.id == id, Project.user_id == user.id)
             .first()
         )
-        return x
+        if not project:
+            raise HTTPException(404, "Project not found or you don't own it.")
+
+        # Prepare the list of team members with roles
+        team_members = [TeamMemberSchema(email=project.owner.email, role="admin")]
+        for member in project.shared_with:
+            team_members.append(TeamMemberSchema(email=member.email, role="member"))
+
+        # Manually create the response dictionary to include the owner and all members
+        return {
+            "id": project.id,
+            "name": project.name,
+            "user_id": project.user_id,
+            "api_key": project.api_key,
+            "created_at": project.created_at,
+            "allowed_origins": project.allowed_origins,
+            "callback_url": project.callback_url,
+            "configs": project.configs,
+            "owner": UserSchema.model_validate(project.owner),
+            "shared_with": team_members,
+        }
     except Exception as e:
-        raise HTTPException(400, "Error occured " + str(e))
+        raise HTTPException(400, "Error occurred: " + str(e))
 
 
 @router.get("/regen-api-key/{projectId}", response_model=ProjectInDBBase)
@@ -134,7 +159,14 @@ def get_collections_in_project(
     )
     if not project:
         raise HTTPException(404, "Project not found")
-
+    for collection in project.collections:
+        if not collection.permissions or type(collection.permissions) != dict:
+            # set and save collection permissions
+            collection.permissions = DEFAULT_PERMISSION_DICT
+            db.add(collection)
+            db.commit()
+            db.refresh(collection)
+        print(collection.permissions)
     return project.collections
 
 
@@ -169,7 +201,7 @@ def get_collection_by_id(
         db.add(collection)
         db.commit()
         db.refresh(collection)
-
+    print(collection.permissions)
     return {
         "id": collection.id,
         "name": collection.name,

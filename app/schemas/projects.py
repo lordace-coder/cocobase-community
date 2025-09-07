@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from uuid import UUID
 
-from app.schemas.user import UserSchema
+from app.schemas.user import TeamMemberSchema, UserSchema
 
 
 class ProjectBase(BaseModel):
@@ -29,6 +29,8 @@ class ProjectInDBBase(ProjectBase):
     user_id: UUID
     created_at: Optional[datetime]
     owner: UserSchema
+    shared_with: Optional[List[TeamMemberSchema]] = []
+    model_config = {"from_attributes": True}
 
 
 class Project(ProjectInDBBase):
