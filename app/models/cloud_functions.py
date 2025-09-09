@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
-
+from uuid import uuid4
 from app.core.database import Base
 
 
@@ -26,7 +26,7 @@ class RuntimeEnum(str, enum.Enum):
 class CloudFunction(Base):
     __tablename__ = "cloud_functions"
 
-    id = Column(String, primary_key=True)  # UUID
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))  # UUID
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
 
     name = Column(String(100), nullable=False)  # unique per project
@@ -37,7 +37,6 @@ class CloudFunction(Base):
         Text, nullable=False
     )  # store inline code (or store a path to file/object storage)
 
-
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -47,11 +46,10 @@ class CloudFunction(Base):
     )
 
 
-
 class FunctionExecution(Base):
     __tablename__ = "function_executions"
 
-    id = Column(String, primary_key=True)  # UUID
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))  # UUID
     function_id = Column(String, ForeignKey("cloud_functions.id"), nullable=False)
 
     status = Column(String(50), nullable=False)  # success, failed, timeout
