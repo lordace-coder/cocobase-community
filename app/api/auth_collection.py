@@ -23,6 +23,7 @@ class AppUserSchema(BaseModel):
     email: str
     password: str
     data: Optional[dict] = None
+    roles: Optional[list[str]] = []
 
 
 class AppUserUpdateSchema(BaseModel):
@@ -37,6 +38,7 @@ class AppUserResponse(BaseModel):
     client_id: str
     created_at: datetime
     id: str
+    roles: Optional[list[str]] = []
 
 
 class AppTokenResponse(BaseModel):
