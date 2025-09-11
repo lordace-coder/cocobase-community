@@ -1,7 +1,9 @@
 import redis
 
-REDIS_URL = "redis://default:ixV21Gy0eLUXUU3Vz8el8iwYHdOxRV3Z@redis-12065.c245.us-east-1-3.ec2.redns.redis-cloud.com:12065"
+REDIS_URL = (
+    "redis://default:269473f8b00b4e2cac1d08be8e1634f2@fly-jobist-redis.upstash.io:6379"
+)
 instance = redis.Redis.from_url(
-    "redis://default:ixV21Gy0eLUXUU3Vz8el8iwYHdOxRV3Z@redis-12065.c245.us-east-1-3.ec2.redns.redis-cloud.com:12065",
+    REDIS_URL,
     decode_responses=True,
 )

@@ -496,16 +496,17 @@ def update_permissions(
     db.refresh(collection)
     return collection
 
-
+class RolesRequest(BaseModel):
+    roles: list[str]
 # * FOR ADDING ROLES TO A USER(APPUSER)
 @router.patch("/{project_id}/users/{id}")
 def add_user_roles(
     project_id: str,
     id: str,
-    payload: list,
+    payload: list[str],
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> AppUserSchema:
+) -> AppUserResponse:
     project = (
         db.query(Project)
         .filter(
@@ -520,7 +521,7 @@ def add_user_roles(
         raise HTTPException(404, "Project not found")
     app_user: AppUser = db.query(AppUser).filter(
         AppUser.id == id, AppUser.client_id == project.id
-    )
+    ).first()
 
     if not app_user:
         raise HTTPException(404, "App user not found")
@@ -538,7 +539,7 @@ def delete_user(
     id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> AppUserSchema:
+):
     project = (
         db.query(Project)
         .filter(
@@ -551,8 +552,10 @@ def delete_user(
     )
     if not project:
         raise HTTPException(404, "Project not found")
-    app_user: AppUser = db.query(AppUser).filter(
-        AppUser.id == id, AppUser.client_id == project.id
+    app_user: AppUser = (
+        db.query(AppUser)
+        .filter(AppUser.id == id, AppUser.client_id == project.id)
+        .first()
     )
 
     if not app_user:
