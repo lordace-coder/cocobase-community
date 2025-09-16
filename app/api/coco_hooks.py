@@ -238,7 +238,6 @@ async def stream_webhook_events(
             # Clean up Redis connection
             try:
                 await pubsub.unsubscribe(channel_name)
-                await pubsub_redis.close()
                 logger.info(f"Cleaned up Redis connection for webhook: {webhook_uuid}")
             except Exception as cleanup_err:
                 logger.error(f"Error during cleanup: {cleanup_err}")
