@@ -9,7 +9,8 @@ from app.api import (
     auth_collection,
     files,
     payments,
-    collaborations
+    collaborations,
+    storage,
 )
 from app.websockets import documents
 from app.core.middleware import BodySizeLimitMiddleware
@@ -54,6 +55,7 @@ app.include_router(files.router)
 app.include_router(payments.router)
 app.include_router(coco_hooks.router)
 app.include_router(collaborations.router)
+app.include_router(storage.router)
 # Add middleware
 
 
