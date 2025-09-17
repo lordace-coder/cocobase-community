@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
+from app.admin.backends import AdminAuth, authentication_backend
 from app.api import (
     user,
     collections,
@@ -7,20 +9,19 @@ from app.api import (
     project,
     api,
     auth_collection,
-    files,
     payments,
     collaborations,
     storage,
 )
 from app.websockets import documents
-from app.core.middleware import BodySizeLimitMiddleware
+from app.core.database import engine
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 import traceback
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
+from sqladmin import Admin
 
 app = FastAPI(
     title="CocoBase API",
@@ -30,6 +31,7 @@ app = FastAPI(
     redoc_url=None,
 )
 
+admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -38,7 +40,7 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
-app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
+# app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
 
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
@@ -51,7 +53,6 @@ app.include_router(
 app.include_router(api.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
-app.include_router(files.router)
 app.include_router(payments.router)
 app.include_router(coco_hooks.router)
 app.include_router(collaborations.router)
@@ -83,3 +84,9 @@ async def ensure_cache_init(request, call_next):
         FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     response = await call_next(request)
     return response
+
+
+# add admin views
+admin.add_view(UserAdmin)
+admin.add_view(PricingPlanModel)
+admin.add_view(ProjectSubscriptionModel)

@@ -1,9 +1,8 @@
-from sqlalchemy import UUID, Column, Integer, String, DateTime
+from sqlalchemy import UUID, Column, Integer, String, DateTime, Boolean
 from app.core.database import Base
 from datetime import datetime
 from uuid import uuid4
 from sqlalchemy.orm import relationship
-from app.models.files import UploadedFile, UserStorage
 from app.services.utils import hash_password, verify_password
 from app.models.app_client import project_shares
 
@@ -36,13 +35,10 @@ class User(Base):
         secondary="suggestion_likes",
         back_populates="liked_by_users",
     )
+    is_staff = Column(Boolean, default=False)
 
     def set_password(self, password: str) -> None:
         self.password = hash_password(password)
 
     def compare_password(self, password: str) -> bool:
         return verify_password(password, self.password)
-
-
-User.storage = relationship(UserStorage, back_populates="user", uselist=False)
-User.files = relationship(UploadedFile, back_populates="user")

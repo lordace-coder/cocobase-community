@@ -40,7 +40,6 @@ class PricingPlan(Base):
 
     projects = relationship("ProjectSubscription", back_populates="plan")
 
-
 class ProjectSubscription(Base):
     __tablename__ = "project_subscriptions"
 
@@ -54,7 +53,9 @@ class ProjectSubscription(Base):
     auto_renew = Column(Boolean, default=True)
 
     plan = relationship("PricingPlan", back_populates="projects")
-
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    project = relationship("Project", back_populates="subscriptions")
+    
     def check_and_downgrade(self, db, free_plan_id: int):
         """Downgrade project to free plan if expired."""
         now = datetime.utcnow()
@@ -66,8 +67,4 @@ class ProjectSubscription(Base):
         return False
 
 
-Project.subscriptions = relationship("ProjectSubscription", back_populates="project")
 
-ProjectSubscription.project_id = Column(
-    String, ForeignKey("projects.id"), nullable=False
-)

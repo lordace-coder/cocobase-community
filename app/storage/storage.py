@@ -63,9 +63,13 @@ def get_files(project_id: str):
     files = []
     if "Contents" in response:
         for obj in response["Contents"]:
+
             key = obj["Key"]
             filename = key.replace(prefix, "")
-            if not filename:  # skip empty "directory" placeholders
+
+            if (
+                not filename or ".bzEmpty" in filename
+            ):  # skip empty "directory" placeholders
                 continue
 
             file_info = {
@@ -78,3 +82,46 @@ def get_files(project_id: str):
             files.append(file_info)
 
     return files
+
+
+def handle_file_upload(file_content: bytes, project_id: str, filename: str):
+    """
+    Uploads a file's content to a B2 bucket using S3-compatible boto3.
+
+    :param file_content: The binary content of the file.
+    :param project_id: The project ID for the S3-like path.
+    :param filename: The name of the file.
+    :return: The S3 response object.
+    """
+    # Create a file-like object from the in-memory bytes
+    file_obj = io.BytesIO(file_content)
+
+    # Construct the object key (S3-style path)
+    s3_object_key = f"projects/{project_id}/{filename}"
+
+    # Use upload_fileobj with the new file-like object and the correct key
+    try:
+        res = s3_client.upload_fileobj(file_obj, B2_BUCKET, s3_object_key)
+        print(f"✅ Successfully uploaded '{filename}' to S3 at '{s3_object_key}'")
+        return res
+    except Exception as e:
+        print(f"❌ An error occurred during upload: {e}")
+        # Re-raise the exception or handle it as needed
+        raise
+
+
+def delete_s3_file(object_key):
+    """
+    Deletes a single object from an S3 bucket.
+
+    :param bucket_name: Name of the S3 bucket.
+    :param object_key: The S3 object key (path to the file).
+    :return: True if the object was deleted, False otherwise.
+    """
+    try:
+        s3_client.delete_object(Bucket=B2_BUCKET, Key=object_key)
+        print(f"✅ Successfully deleted {object_key} from {B2_BUCKET}")
+        return True
+    except Exception as e:
+        print(f"❌ An error occurred: {e}")
+        return False

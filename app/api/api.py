@@ -18,7 +18,6 @@ from app.schemas.collections import DocumentSchema
 from app.schemas.suggestions import SuggestionCreate, SuggestionSchema
 from app.services.cloudinary import delete_file
 from app.services.utils import generate_api_key
-from app.models.files import UploadedFile, UserStorage
 
 
 router = APIRouter(tags=["API"], prefix="/api")
