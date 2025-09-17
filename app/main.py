@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
 from app.admin.backends import AdminAuth, authentication_backend
+from app.admin.project import ProjectModel
 from app.api import (
     user,
     collections,
@@ -90,3 +91,4 @@ async def ensure_cache_init(request, call_next):
 admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
+admin.add_view(ProjectModel)

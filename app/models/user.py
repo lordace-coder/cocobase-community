@@ -42,3 +42,6 @@ class User(Base):
 
     def compare_password(self, password: str) -> bool:
         return verify_password(password, self.password)
+
+    def __str__(self):
+        return self.username
