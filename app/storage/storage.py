@@ -12,9 +12,9 @@ B2_KEY_ID = os.getenv("BACKBLAZE_KEY_ID")
 B2_APPLICATION_KEY = os.getenv("BACKBLAZE_APPLICATION_KEY")
 B2_ENDPOINT = os.getenv("BUCKET_ENDPOINT")
 B2_BUCKET = os.getenv("BUCKET_NAME")
-PUBLIC_BASE_URL = f"https://f004.backblazeb2.com/file/{B2_BUCKET}/"
 # Storage limit per project (50MB in bytes)
 STORAGE_LIMIT_PER_PROJECT = 50 * 1024 * 1024  # 50MB
+PUBLIC_BASE_URL = f"https://f005.backblazeb2.com/file/{B2_BUCKET}/"
 
 # Initialize B2 client
 s3_client = boto3.client(
@@ -58,7 +58,6 @@ def get_files(project_id: str):
 
     response = s3_client.list_objects_v2(Bucket=B2_BUCKET, Prefix=prefix)
 
-    PUBLIC_BASE_URL = f"https://f005.backblazeb2.com/file/{B2_BUCKET}/"
 
     files = []
     if "Contents" in response:
@@ -103,7 +102,7 @@ def handle_file_upload(file_content: bytes, project_id: str, filename: str):
     try:
         res = s3_client.upload_fileobj(file_obj, B2_BUCKET, s3_object_key)
         print(f"✅ Successfully uploaded '{filename}' to S3 at '{s3_object_key}'")
-        return res
+        return PUBLIC_BASE_URL+s3_object_key
     except Exception as e:
         print(f"❌ An error occurred during upload: {e}")
         # Re-raise the exception or handle it as needed

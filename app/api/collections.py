@@ -1,5 +1,13 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    Query,
+    BackgroundTasks,
+    UploadFile,
+)
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.dependencies import get_app_user, get_project
@@ -14,6 +22,7 @@ from sqlalchemy import cast, Integer, String
 from fastapi.encoders import jsonable_encoder
 
 from app.services.utils import handle_webhook_call
+from app.storage.storage import check_storage_limit, handle_file_upload
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 from fastapi_cache.decorator import cache
 from fastapi_cache import FastAPICache
@@ -377,3 +386,24 @@ def edit_document(
     )
     bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
     return document
+
+
+@router.post("/file")
+async def upload_file_to_project(
+    bg: BackgroundTasks,
+    file: UploadFile,
+    proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
+):
+    filename = file.filename
+    file_content = await file.read()  # Read the content into memory
+    file_size = len(file_content)
+
+    check_storage_limit(proj[0].id, file_size)
+
+    # Pass the content and filename to the handler
+    try:
+        res = handle_file_upload(file_content, proj[0].id, filename)
+        return {"message": "File uploaded successfully", "url": res}
+    except Exception as e:
+        return {"error": str(e)}, 500
