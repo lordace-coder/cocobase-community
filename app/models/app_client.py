@@ -50,6 +50,10 @@ class Project(Base):
     )
     subscriptions = relationship("ProjectSubscription", back_populates="project")
 
+    def __repr__(self):
+        return f"{self.name} owned by {self.user_id}"
+
+
 class AppUser(Base):
     __tablename__ = "app_users"
     id: Mapped[str] = mapped_column(

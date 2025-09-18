@@ -12,6 +12,7 @@ from app.models.collections import Collection, Document
 from app.models.user import User
 from app.models.app_client import Project, AppUser
 from app.schemas.collections import (
+    CollectionCreateSchema,
     CollectionPermissionsRequest,
     CollectionSchema,
     DocumentCreateSchema,
@@ -149,6 +150,88 @@ def update_project(
     db.commit()
     db.refresh(project)
     return project
+
+
+# create collection
+
+
+@router.post("/{id}/collection", status_code=201, response_model=CollectionSchema)
+def create_collection(
+    id: str,
+    payload: CollectionCreateSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(
+            404, "Project not found or you do not have access to this project"
+        )
+
+    # check if collection with this name already exist in the project
+    query = (
+        db.query(Collection)
+        .filter(Collection.project_id == project.id, payload.name == Collection.name)
+        .first()
+    )
+    if query:
+        raise HTTPException(
+            400, "You cant have two collections with the same name on a project"
+        )
+
+    new_collection = Collection(
+        **payload.model_dump(),
+        project_id=project.id,
+        project=project,
+    )
+
+    db.add(new_collection)
+    db.commit()
+    # update connections
+
+    db.refresh(new_collection)
+    return new_collection
+
+
+# delete collection
+@router.delete("/{id}/collection/{collection_id}")
+def delete_collection(
+    id: str,
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(
+            404, "Project not found or you do not have access to this project"
+        )
+    collection: Collection = db.query(Collection).get(collection_id)
+    if not collection.project_id == id:
+        raise HTTPException(
+            400, "Current project does not have access to the desired collection"
+        )
+    db.delete(collection)
+    db.commit()
+    return
 
 
 # get collections in a project
@@ -496,8 +579,11 @@ def update_permissions(
     db.refresh(collection)
     return collection
 
+
 class RolesRequest(BaseModel):
     roles: list[str]
+
+
 # * FOR ADDING ROLES TO A USER(APPUSER)
 @router.patch("/{project_id}/users/{id}")
 def add_user_roles(
@@ -519,9 +605,11 @@ def add_user_roles(
     )
     if not project:
         raise HTTPException(404, "Project not found")
-    app_user: AppUser = db.query(AppUser).filter(
-        AppUser.id == id, AppUser.client_id == project.id
-    ).first()
+    app_user: AppUser = (
+        db.query(AppUser)
+        .filter(AppUser.id == id, AppUser.client_id == project.id)
+        .first()
+    )
 
     if not app_user:
         raise HTTPException(404, "App user not found")

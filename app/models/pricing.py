@@ -28,7 +28,6 @@ class PricingPlan(Base):
     # Limits
     max_requests_per_month = Column(Integer)
     max_storage_mb = Column(Integer)
-    max_projects = Column(Integer)
     max_users = Column(Integer)  # NEW: number of allowed users in the project
 
     # Features
@@ -39,6 +38,10 @@ class PricingPlan(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     projects = relationship("ProjectSubscription", back_populates="plan")
+
+    def __repr__(self):
+        return self.name
+
 
 class ProjectSubscription(Base):
     __tablename__ = "project_subscriptions"
@@ -55,7 +58,7 @@ class ProjectSubscription(Base):
     plan = relationship("PricingPlan", back_populates="projects")
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
     project = relationship("Project", back_populates="subscriptions")
-    
+
     def check_and_downgrade(self, db, free_plan_id: int):
         """Downgrade project to free plan if expired."""
         now = datetime.utcnow()
@@ -65,6 +68,6 @@ class ProjectSubscription(Base):
             db.commit()
             return True
         return False
-
-
-
+    
+    def __repr__(self):
+        return f"{self.plan.name} plan for {self.project.name}"
