@@ -239,7 +239,7 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
 
             # Check if user exists
             try:
-                existing_user = db.query(AppUser).filter(AppUser.email == email).first()
+                existing_user = db.query(AppUser).filter(AppUser.email == email,AppUser.client_id== project_id).first()
 
                 if existing_user:
                     # User exists - check if they used OAuth before
