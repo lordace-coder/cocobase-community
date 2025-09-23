@@ -218,7 +218,7 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
                 )
             except Exception as e:
                 print(f"Token fetch error: {e}")
-                built_url = f"{GOOGLE_COMPLETE_URL}?error=invalid_authorization_code"
+                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=invalid_authorization_code"
                 return RedirectResponse(built_url)
 
             # Get user info from Google
@@ -228,13 +228,13 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
                 user = userinfo.json()
             except Exception as e:
                 print(f"User info fetch error: {e}")
-                built_url = f"{GOOGLE_COMPLETE_URL}?error=failed_to_get_user_info"
+                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=failed_to_get_user_info"
                 return RedirectResponse(built_url)
 
             # Validate email
             email: str | None = user.get("email")
             if not email:
-                built_url = f"{GOOGLE_COMPLETE_URL}?error=no_email_provided"
+                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=no_email_provided"
                 return RedirectResponse(built_url)
 
             # Check if user exists
@@ -244,7 +244,7 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
                 if existing_user:
                     # User exists - check if they used OAuth before
                     if not existing_user.oauth_id:
-                        built_url = f"{GOOGLE_COMPLETE_URL}?error=email_already_registered_with_password"
+                        built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=email_already_registered_with_password"
                         return RedirectResponse(built_url)
 
                     # User exists and used OAuth - log them in
@@ -277,10 +277,10 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
             except Exception as e:
                 print(f"Database error: {e}")
                 db.rollback()
-                built_url = f"{GOOGLE_COMPLETE_URL}?error=database_error"
+                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=database_error"
                 return RedirectResponse(built_url)
 
     except Exception as e:
         print(f"Unexpected error in Google auth: {e}")
-        built_url = f"{GOOGLE_COMPLETE_URL}?error=authentication_failed"
+        built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=authentication_failed"
         return RedirectResponse(built_url)
