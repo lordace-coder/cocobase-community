@@ -269,7 +269,7 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
                     db.commit()
 
                     # Generate token for new user
-                    access_token = create_app_user_token()
+                    access_token = create_app_user_token(new_user)
                     built_url = f"{GOOGLE_COMPLETE_URL}?coco-super-token={access_token}"
                     print(f"New user created: {built_url}")
                     return RedirectResponse(built_url)
