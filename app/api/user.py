@@ -2,12 +2,13 @@ import os
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.schemas.user import UserSchema, UserCreateSchema
 from app.models.user import User
-from app.services.jwt import create_access_token
+from app.services.jwt import create_access_token, generate_reset_token, verify_reset_token
 from app.services.oauth2_helper import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
@@ -25,7 +26,7 @@ frontend_url = "https://cocobase.buzz"
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)) -> UserSchema:
+def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)):
     # check if user exists
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Account with this email already exists.")
@@ -35,7 +36,10 @@ def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)) -> Use
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    access_token = create_access_token(
+                data={"user": user.username, "userId": user.id.__str__()}
+            )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.get("/users")
@@ -168,3 +172,43 @@ async def auth(code: str, db: Session = Depends(get_db)):
         print(f"Unexpected error in Google auth: {e}")
         built_url = f"{frontend_url}/login?error=authentication_failed"
         return RedirectResponse(built_url)
+
+
+
+
+# FORGOT PASSWORD FUNCTIONALITIES
+@router.get("/reset-password/{email}")
+def handle_password_reset(email: str, db: Session = Depends(get_db)):
+    # verify user exists
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User does not exist")
+
+    # generate token and password update link
+    token = generate_reset_token(email)
+
+    # Build reset URL using environment variable for frontend base URL
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    reset_url = f"{frontend_url}/forgot_password/{token}"
+    #  TODO send email here
+    return {"msg": "Password reset email sent"}
+
+
+class PasswordUpdateSchema(BaseModel):
+    new_password: str
+    token: str
+
+
+@router.post("/update-password")
+def update_user_password(payload: PasswordUpdateSchema, db: Session = Depends(get_db)):
+    # confirm token
+    email = verify_reset_token(payload.token)
+
+    # update user password
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, "Invalid user email or invalid token")
+
+    user.set_password(payload.new_password, db)
+
+    pass

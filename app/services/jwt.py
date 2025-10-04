@@ -48,3 +48,22 @@ def decode_app_user_token(token, projectId):
         )
     except JWTError:
         return None
+
+
+
+
+def generate_reset_token(email: int):
+    expire = datetime.utcnow() + timedelta(minutes=10)
+    payload = {"sub": str(email), "exp": expire}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_reset_token(token: str):
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        return email
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")

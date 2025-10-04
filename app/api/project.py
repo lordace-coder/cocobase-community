@@ -527,6 +527,87 @@ def list_users(
     )
     users = db.query(AppUser).filter(AppUser.client_id == project.id)
     return users
+# update user
+@router.put("/{id}/users/{userid}")
+def update_user(
+    id: str,
+    userid: str,
+    payload: AppUserSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AppUserResponse:
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+    app_user: AppUser = (
+        db.query(AppUser)
+        .filter(AppUser.id == userid, AppUser.client_id == project.id)
+        .first()
+    )
+
+    if not app_user:
+        raise HTTPException(404, "App user not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for key, val in update_data.items():
+        setattr(app_user, key, val)
+    if payload.password:
+        app_user.set_password(payload.password)
+    db.add(app_user)
+    db.commit()
+    db.refresh(app_user)
+    return app_user
+
+
+# create user
+@router.post("/{id}/users", status_code=201)
+def create_user(
+    id: str,
+    payload: AppUserSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AppUserResponse:
+    project = (
+        db.query(Project)
+        .filter(
+            Project.id == id,
+            or_(
+                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
+            ),
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    # check if user with this email already exist in the project
+    query = (
+        db.query(AppUser)
+        .filter(AppUser.client_id == project.id, payload.email == AppUser.email)
+        .first()
+    )
+    if query:
+        raise HTTPException(400, "User with this email already exists in the project")
+
+    if not payload.password:
+        raise HTTPException(400, "Password is required to create a user")
+    
+    user = AppUser(**payload.model_dump(), client_id=project.id)
+    user.set_password(payload.password)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # get user by id
