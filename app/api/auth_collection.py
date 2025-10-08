@@ -30,6 +30,7 @@ class AppUserUpdateSchema(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     data: Optional[dict] = None
+    roles: Optional[list[str]] = []
 
 
 class AppUserResponse(BaseModel):

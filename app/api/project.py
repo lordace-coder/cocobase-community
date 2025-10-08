@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from app.api.auth_collection import AppUserSchema, AppUserResponse
+from app.api.auth_collection import AppUserSchema, AppUserResponse, AppUserUpdateSchema
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, verify_project_access
 from app.core.middleware import track_api_call
@@ -532,7 +532,7 @@ def list_users(
 def update_user(
     id: str,
     userid: str,
-    payload: AppUserSchema,
+    payload: AppUserUpdateSchema,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AppUserResponse:
