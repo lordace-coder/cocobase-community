@@ -498,7 +498,7 @@ def update_document_in_collection(
     bg.add_task(
         handle_webhook_call,
         collection.webhook_url,
-        DocumentSchema.model_dump(document),
+        DocumentSchema.from_orm(document).dict(),
         True,
     )
 
