@@ -61,22 +61,22 @@ app.include_router(storage.router)
 # Add middleware
 
 
-# class FullErrorMiddleware(BaseHTTPMiddleware):
-#     async def dispatch(self, request: Request, call_next):
-#         try:
-#             return await call_next(request)
-#         except Exception as exc:
-#             tb = traceback.format_exc()
-#             return JSONResponse(
-#                 status_code=500,
-#                 content={
-#                     "error": str(exc),
-#                     "traceback": tb,
-#                 },
-#             )
+class FullErrorMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            tb = traceback.format_exc()
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": str(exc),
+                    "traceback": tb,
+                },
+            )
 
 
-# app.add_middleware(FullErrorMiddleware)
+app.add_middleware(FullErrorMiddleware)
 
 
 @app.middleware("http")
