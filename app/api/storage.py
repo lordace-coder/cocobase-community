@@ -52,18 +52,7 @@ async def upload_project_file(project_id: str, file: UploadFile):
         return {"error": str(e)}, 500
 
 
-convert_to_mb = lambda bytes: bytes / (1024 * 1024)
 
-def convert_to_mb(bytes)->str:
-    # return mb , gb or kb
-    if bytes >= 1024 * 1024 * 1024:
-        return f"{bytes / (1024 * 1024 * 1024):.2f} GB"
-    elif bytes >= 1024 * 1024:
-        return f"{bytes / (1024 * 1024):.2f} MB"
-    elif bytes >= 1024:
-        return f"{bytes / 1024:.2f} KB"
-    else:
-        return f"{bytes} Bytes"
 
 @router.get("/storage-info/{project_id}")
 def get_project_storage_info(project_id: str, db: Session = Depends(get_db)):
@@ -77,14 +66,14 @@ def get_project_storage_info(project_id: str, db: Session = Depends(get_db)):
             total_storage = plan.max_storage_mb * 1024 * 1024  # Convert MB to bytes
             available_storage = total_storage - proj_usage
             return {
-                "total_storage": convert_to_mb(total_storage),
-                "available": convert_to_mb(available_storage),
-                "used": convert_to_mb(proj_usage),
+                "total_storage": total_storage,
+                "available": available_storage,
+                "used": proj_usage,
             }
     total_storage = default_plan.max_storage_mb * 1024 * 1024  # Convert MB to bytes
     available_storage = total_storage - proj_usage
     return {
-        "total_storage": convert_to_mb(total_storage),
-        "available": convert_to_mb(available_storage),
-        "used": convert_to_mb(proj_usage),
+        "total_storage": total_storage,
+        "available": available_storage,
+        "used": proj_usage,
     }
