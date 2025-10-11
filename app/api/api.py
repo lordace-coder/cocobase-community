@@ -169,3 +169,5 @@ async def toggle_like_suggestion(
         db.rollback()
         raise HTTPException(500, f"Failed to {action} suggestion: {str(e)}")
 
+
+

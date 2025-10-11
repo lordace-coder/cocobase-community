@@ -32,7 +32,7 @@ class CloudFunction(Base):
     name = Column(String(100), nullable=False)  # unique per project
     description = Column(Text, nullable=True)
 
-    runtime = Column(Enum(RuntimeEnum), nullable=False)
+    runtime = Column(String, nullable=False)
     code = Column(
         Text, nullable=False
     )  # store inline code (or store a path to file/object storage)

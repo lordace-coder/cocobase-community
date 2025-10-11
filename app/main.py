@@ -92,3 +92,4 @@ admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
 admin.add_view(ProjectModel)
+
