@@ -28,7 +28,8 @@ class PricingPlan(Base):
     # Limits
     max_requests_per_month = Column(Integer)
     max_storage_mb = Column(Integer)
-    max_users = Column(Integer)  # NEW: number of allowed users in the project
+    max_users = Column(Integer)
+    max_cloud_functions = Column(Integer)
 
     # Features
     features = Column(JSON)

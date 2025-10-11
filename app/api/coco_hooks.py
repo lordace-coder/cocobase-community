@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 import redis.asyncio as redis
-from app.services.redis_worker import instance
+from app.services.redis_worker import get_redis_instance, get_pubsub_redis
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -65,6 +65,11 @@ async def generate_new_webhook_url(request: Request):
     )
 
 
+# CRITICAL FIX: Use the SAME Redis instance for both publish and subscribe
+# The issue is likely that get_redis_instance() and get_pubsub_redis()
+# are returning different Redis connections
+
+
 @router.post("/{webhook_uuid}")
 async def receive_webhook(
     webhook_uuid: str,
@@ -72,36 +77,24 @@ async def receive_webhook(
 ):
     """
     Receive webhook payloads and publish them to Redis pub/sub.
-
-    This endpoint handles incoming webhooks from third-party services.
-    It captures all relevant request data and publishes it to a Redis
-    channel identified by the webhook UUID.
-
-    Args:
-        webhook_uuid: The unique identifier for this webhook endpoint
-        request: FastAPI request object containing headers, body, etc.
-        instance: Redis connection for publishing messages
-
-    Returns:
-        dict: Confirmation message with timestamp
     """
+    instance = get_redis_instance()
+    if instance is None:
+        raise HTTPException(status_code=503, detail="Redis connection not available")
+
     try:
-        # Read the request body
         body_bytes = await request.body()
 
-        # Try to decode body as JSON if possible, otherwise keep as string
         try:
             if body_bytes:
                 body_content = json.loads(body_bytes.decode("utf-8"))
             else:
                 body_content = None
         except (json.JSONDecodeError, UnicodeDecodeError):
-            # If JSON parsing fails, store as raw string
             body_content = (
                 body_bytes.decode("utf-8", errors="replace") if body_bytes else None
             )
 
-        # Extract request metadata
         webhook_data_dict = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "method": request.method,
@@ -111,16 +104,21 @@ async def receive_webhook(
             "query_params": dict(request.query_params),
         }
 
-        # Serialize the webhook data for Redis (avoid Pydantic model issues)
         message_payload = json.dumps(webhook_data_dict)
-
-        # Publish to Redis pub/sub channel named after the UUID
         channel_name = f"webhook:{webhook_uuid}"
 
-        # Try using the dependency-injected client first
-        logger.debug(f"Publishing to channel: {channel_name}")
-        publish_result = instance.publish(channel_name, message_payload)
-        logger.debug(f"Publish result: {publish_result}")
+        logger.info(f"📤 Publishing to channel: {channel_name}")
+        logger.info(
+            f"📦 Message payload: {message_payload[:200]}..."
+        )  # Log first 200 chars
+
+        publish_result = await instance.publish(channel_name, message_payload)
+
+        logger.info(f"✅ Publish result (subscribers notified): {publish_result}")
+
+        # ADD WARNING if no subscribers
+        if publish_result == 0:
+            logger.warning(f"⚠️ No subscribers listening on channel: {channel_name}")
 
         return {
             "status": "received",
@@ -131,20 +129,160 @@ async def receive_webhook(
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in receive_webhook: {e}", exc_info=True)
+        logger.error(f"❌ Unexpected error in receive_webhook: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error processing webhook: {str(e)}"
         )
-    finally:
-        # Clean up temporary Redis connection if created
-        if instance:
+
+
+@router.get("/stream/{webhook_uuid}")
+async def stream_webhook_events(webhook_uuid: str):
+    """
+    Stream webhook events in real-time using Server-Sent Events (SSE).
+    """
+    instance = get_redis_instance()
+    if instance is None:
+        raise HTTPException(status_code=503, detail="Redis connection not available")
+
+    async def event_stream():
+        redis_client = None
+        pubsub = None
+
+        try:
+            # CRITICAL: Use get_pubsub_redis() which should create a properly configured pubsub client
+            redis_client = await get_pubsub_redis()
+
+            # IMPORTANT: PubSub MUST have decode_responses=False (works with bytes)
+            pubsub = redis_client.pubsub()
+
+            channel_name = f"webhook:{webhook_uuid}"
+            await pubsub.subscribe(channel_name)
+            logger.info(f"🔔 Subscribed to channel: {channel_name}")
+
+            # Send initial connection confirmation
+            yield {
+                "event": "connected",
+                "data": json.dumps(
+                    {
+                        "status": "connected",
+                        "channel": channel_name,
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    }
+                ),
+            }
+
+            # Send a heartbeat every 15 seconds to keep connection alive
+            last_heartbeat = asyncio.get_event_loop().time()
+
+            # Listen for messages
+            while True:
+                try:
+                    # Wait for message with timeout to allow heartbeat
+                    message = await asyncio.wait_for(
+                        pubsub.get_message(
+                            ignore_subscribe_messages=False, timeout=1.0
+                        ),
+                        timeout=15.0,
+                    )
+
+                    if message:
+                        logger.info(f"📨 Received message type: {message['type']}")
+
+                        if message["type"] == "subscribe":
+                            logger.info(f"✅ Successfully subscribed to {channel_name}")
+                            continue
+
+                        if message["type"] == "message":
+                            try:
+                                message_data = message["data"]
+                                if isinstance(message_data, bytes):
+                                    message_data = message_data.decode("utf-8")
+
+                                webhook_data = json.loads(message_data)
+                                logger.info(f"📬 Sending webhook event to client")
+
+                                yield {
+                                    "event": "webhook",
+                                    "data": json.dumps(webhook_data),
+                                }
+                                last_heartbeat = asyncio.get_event_loop().time()
+
+                            except json.JSONDecodeError as json_err:
+                                logger.error(f"❌ JSON decode error: {json_err}")
+                                yield {
+                                    "event": "error",
+                                    "data": json.dumps(
+                                        {
+                                            "error": "Failed to parse webhook data",
+                                            "raw_data": str(message.get("data", "")),
+                                        }
+                                    ),
+                                }
+                    else:
+                        # No message received, check if heartbeat needed
+                        current_time = asyncio.get_event_loop().time()
+                        if current_time - last_heartbeat > 15:
+                            yield {
+                                "event": "heartbeat",
+                                "data": json.dumps(
+                                    {"timestamp": datetime.utcnow().isoformat() + "Z"}
+                                ),
+                            }
+                            last_heartbeat = current_time
+
+                except asyncio.TimeoutError:
+                    # Send heartbeat on timeout
+                    yield {
+                        "event": "heartbeat",
+                        "data": json.dumps(
+                            {"timestamp": datetime.utcnow().isoformat() + "Z"}
+                        ),
+                    }
+                    last_heartbeat = asyncio.get_event_loop().time()
+
+        except asyncio.CancelledError:
+            logger.info(f"👋 Client disconnected from webhook stream: {webhook_uuid}")
+        except Exception as e:
+            logger.error(f"❌ Error in event stream: {e}", exc_info=True)
             try:
-                await instance.close()
-            except Exception as cleanup_err:
-                logger.error(f"Error closing temporary Redis connection: {cleanup_err}")
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        {
+                            "error": str(e),
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    ),
+                }
+            except:
+                pass
+        finally:
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe(channel_name)
+                    await pubsub.close()
+                    logger.info(f"🔌 Closed pubsub for webhook: {webhook_uuid}")
+                except Exception as cleanup_err:
+                    logger.error(f"Error closing pubsub: {cleanup_err}")
+
+            if redis_client:
+                try:
+                    await redis_client.close()
+                    logger.info(f"🔌 Closed Redis client for webhook: {webhook_uuid}")
+                except Exception as cleanup_err:
+                    logger.error(f"Error closing Redis client: {cleanup_err}")
+
+    return EventSourceResponse(
+        event_stream(),
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control",
+        },
+    )
 
 
 @router.get("/stream/{webhook_uuid}")
@@ -160,11 +298,14 @@ async def stream_webhook_events(
 
     Args:
         webhook_uuid: The unique identifier for the webhook channel
-        instance: Redis connection for subscribing to messages
 
     Returns:
         EventSourceResponse: SSE stream of webhook events
     """
+    # Check if Redis instance is available
+    instance = get_redis_instance()
+    if instance is None:
+        raise HTTPException(status_code=503, detail="Redis connection not available")
 
     async def event_stream():
         """
@@ -173,11 +314,17 @@ async def stream_webhook_events(
         Yields:
             dict: SSE event data containing webhook information
         """
-        # Create a dedicated Redis connection for pub/sub
-
-        pubsub = instance.pubsub()
+        # Create a NEW Redis connection specifically for pubsub
+        # PubSub requires decode_responses=False (binary mode)
+        redis_client = None
+        pubsub = None
 
         try:
+            # Get a dedicated Redis client for pubsub
+            redis_client = await get_pubsub_redis()
+
+            pubsub = redis_client.pubsub()
+
             # Subscribe to the specific channel for this webhook UUID
             channel_name = f"webhook:{webhook_uuid}"
             await pubsub.subscribe(channel_name)
@@ -203,8 +350,13 @@ async def stream_webhook_events(
 
                 if message["type"] == "message":
                     try:
+                        # Decode the message data (it comes as bytes)
+                        message_data = message["data"]
+                        if isinstance(message_data, bytes):
+                            message_data = message_data.decode("utf-8")
+
                         # Parse the webhook data from Redis
-                        webhook_data = json.loads(message["data"])
+                        webhook_data = json.loads(message_data)
 
                         # Yield as SSE event
                         yield {"event": "webhook", "data": json.dumps(webhook_data)}
@@ -217,30 +369,49 @@ async def stream_webhook_events(
                             "data": json.dumps(
                                 {
                                     "error": "Failed to parse webhook data",
-                                    "raw_data": message["data"],
+                                    "raw_data": str(message.get("data", "")),
                                 }
                             ),
                         }
+                    except Exception as parse_err:
+                        logger.error(
+                            f"Error parsing message: {parse_err}", exc_info=True
+                        )
 
         except asyncio.CancelledError:
             # Handle client disconnection gracefully
             logger.info(f"Client disconnected from webhook stream: {webhook_uuid}")
         except Exception as e:
-            logger.error(f"Error in event stream: {e}")
+            logger.error(f"Error in event stream: {e}", exc_info=True)
             # Send error event to client
-            yield {
-                "event": "error",
-                "data": json.dumps(
-                    {"error": str(e), "timestamp": datetime.utcnow().isoformat() + "Z"}
-                ),
-            }
-        finally:
-            # Clean up Redis connection
             try:
-                await pubsub.unsubscribe(channel_name)
-                logger.info(f"Cleaned up Redis connection for webhook: {webhook_uuid}")
-            except Exception as cleanup_err:
-                logger.error(f"Error during cleanup: {cleanup_err}")
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        {
+                            "error": str(e),
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    ),
+                }
+            except:
+                pass
+        finally:
+            # Clean up pubsub and Redis connections
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe(channel_name)
+                    await pubsub.close()
+                    logger.info(f"Closed pubsub for webhook: {webhook_uuid}")
+                except Exception as cleanup_err:
+                    logger.error(f"Error closing pubsub: {cleanup_err}")
+
+            if redis_client:
+                try:
+                    await redis_client.close()
+                    logger.info(f"Closed Redis client for webhook: {webhook_uuid}")
+                except Exception as cleanup_err:
+                    logger.error(f"Error closing Redis client: {cleanup_err}")
 
     # Return SSE response with CORS headers for browser compatibility
     return EventSourceResponse(
@@ -263,21 +434,17 @@ async def health_check():
         dict: Service status and Redis connection status
     """
     redis_status = "unknown"
+    instance = get_redis_instance()
 
     try:
-        # Create a test Redis connection
-
-        await instance.ping()
-        redis_status = "connected"
+        if instance is None:
+            redis_status = "not initialized"
+        else:
+            await instance.ping()
+            redis_status = "connected"
     except Exception as e:
         redis_status = f"error: {str(e)}"
         logger.error(f"Redis health check failed: {e}")
-    finally:
-        if instance:
-            try:
-                await instance.close()
-            except Exception:
-                pass
 
     return {
         "status": "healthy" if redis_status == "connected" else "degraded",
@@ -286,7 +453,6 @@ async def health_check():
     }
 
 
-# Additional utility endpoint to get webhook statistics (optional)
 @router.get("/stats/{webhook_uuid}")
 async def get_webhook_stats(webhook_uuid: str):
     """
@@ -301,9 +467,11 @@ async def get_webhook_stats(webhook_uuid: str):
     Returns:
         dict: Basic webhook statistics
     """
-    try:
-        # Create a temporary Redis connection for stats
+    instance = get_redis_instance()
+    if instance is None:
+        raise HTTPException(status_code=503, detail="Redis connection not available")
 
+    try:
         # Check if the webhook channel exists by looking for subscribers
         channel_name = f"webhook:{webhook_uuid}"
         subscriber_count = await instance.pubsub_numsub(channel_name)
@@ -325,9 +493,3 @@ async def get_webhook_stats(webhook_uuid: str):
         raise HTTPException(
             status_code=500, detail=f"Error retrieving webhook stats: {str(e)}"
         )
-    finally:
-        if instance:
-            try:
-                await instance.close()
-            except Exception:
-                pass

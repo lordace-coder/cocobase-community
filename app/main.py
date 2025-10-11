@@ -14,6 +14,7 @@ from app.api import (
     collaborations,
     storage,
 )
+from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
 from app.core.database import engine
 from fastapi_cache import FastAPICache
@@ -42,6 +43,19 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 # app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
+
+
+@app.on_event("startup")
+async def startup_event():
+    await init_redis()
+    print("Redis connected!")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_redis()
+    print("Redis closed!")
+
 
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
@@ -92,4 +106,3 @@ admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
 admin.add_view(ProjectModel)
-
