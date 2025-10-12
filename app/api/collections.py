@@ -390,10 +390,9 @@ def edit_document(
 
 @router.post("/file")
 async def upload_file_to_project(
-    bg: BackgroundTasks,
     file: UploadFile,
+    directory: str = None,
     proj: tuple[Project, User] = Depends(get_project),
-    db: Session = Depends(get_db),
 ):
     filename = file.filename
     file_content = await file.read()  # Read the content into memory
@@ -403,7 +402,7 @@ async def upload_file_to_project(
 
     # Pass the content and filename to the handler
     try:
-        res = handle_file_upload(file_content, proj[0].id, filename)
+        res = handle_file_upload(file_content, proj[0].id, filename, directory)
         return {"message": "File uploaded successfully", "url": res}
     except Exception as e:
         return {"error": str(e)}, 500
