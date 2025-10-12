@@ -504,7 +504,7 @@ def create_new_document(
             bg.add_task(handle_webhook_call, _collection.webhook_url, payload.data)
 
         bg.add_task(
-            notify_collection_watchers, _collection.id, new_doc, RealtimeEvent.create
+            notify_collection_watchers, _collection.name, new_doc, RealtimeEvent.CREATE
         )
 
         # Invalidate cache
@@ -733,7 +733,7 @@ def edit_document(
 
     # Background tasks
     bg.add_task(
-        notify_collection_watchers, collection.id, document, RealtimeEvent.update
+        notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
     )
 
     if collection.webhook_url:
@@ -910,7 +910,7 @@ def batch_create_documents(
         # Background tasks
         for doc in created_documents:
             bg.add_task(
-                notify_collection_watchers, collection.id, doc, RealtimeEvent.create
+                notify_collection_watchers, collection.name, doc, RealtimeEvent.CREATE
             )
 
         if collection.webhook_url:

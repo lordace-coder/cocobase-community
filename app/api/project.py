@@ -468,7 +468,7 @@ def create_document_in_collection(
 
     # Background tasks
     bg.add_task(
-        notify_collection_watchers, collection.id, document, RealtimeEvent.create
+        notify_collection_watchers, collection.name, document, RealtimeEvent.CREATE
     )
 
     pydantic_document = DocumentSchema.model_validate(document)
@@ -546,7 +546,7 @@ def update_document_in_collection(
 
     # Background tasks
     bg.add_task(
-        notify_collection_watchers, collection.id, document, RealtimeEvent.update
+        notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
     )
 
     if collection.webhook_url:
