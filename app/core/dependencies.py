@@ -88,40 +88,97 @@ def check_origin_allowed(project: Project, request: Request) -> bool:
     return False
 
 
+from functools import lru_cache
+from typing import Optional
+from fastapi import Request, Header, Depends, HTTPException, status
+from sqlalchemy.orm import Session, joinedload
+
+
+# Alternative: More aggressive caching with full object caching
+class ProjectCache:
+    """Enhanced cache implementation with full object caching."""
+
+    def __init__(self, maxsize=1000, ttl=3600):
+        self.maxsize = maxsize
+        self.ttl = ttl
+        self._cache = {}
+        self._timestamps = {}
+
+    def get(self, key: str) -> Optional[tuple[Project, User]]:
+        """Get from cache with TTL check."""
+        import time
+
+        if key in self._cache:
+            if time.time() - self._timestamps[key] < self.ttl:
+                return self._cache[key]
+            else:
+                # Expired
+                self.delete(key)
+        return None
+
+    def set(self, key: str, value: tuple[Project, User]):
+        """Set cache with TTL tracking."""
+        import time
+
+        if len(self._cache) >= self.maxsize:
+            # Simple LRU: remove oldest
+            oldest = min(self._timestamps.items(), key=lambda x: x[1])
+            self.delete(oldest[0])
+
+        self._cache[key] = value
+        self._timestamps[key] = time.time()
+
+    def delete(self, key: str):
+        """Remove from cache."""
+        self._cache.pop(key, None)
+        self._timestamps.pop(key, None)
+
+    def clear(self):
+        """Clear entire cache."""
+        self._cache.clear()
+        self._timestamps.clear()
+
+
+# Initialize enhanced cache
+enhanced_project_cache = ProjectCache(maxsize=1000, ttl=3600)
+
+
 def get_project(
     request: Request, x_api_key: str = Header(...), db: Session = Depends(get_db)
 ) -> tuple[Project, User]:
+    """Enhanced version with full object caching."""
 
-    # Check cache first
-    cached_ids = project_cache.get(x_api_key)
-    if cached_ids:
-        project = db.query(Project).filter(Project.id == cached_ids[0]).first()
-        user = db.query(User).filter(User.id == cached_ids[1]).first()
-        if project and user:
-            # Check origin validation
-            if not check_origin_allowed(project, request):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Request origin not allowed for this project",
-                )
-            return project, user
-
-    # Validate API key exists
     if not x_api_key:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Missing the authorization header [x-api-key]. Contact the developer or check out the documentation",
+            detail="Missing the authorization header [x-api-key]",
         )
 
-    # Query project from database
-    project = db.query(Project).filter(Project.api_key == x_api_key).first()
+    # Try to get full objects from cache
+    cached_result = enhanced_project_cache.get(x_api_key)
+    if cached_result:
+        project, user = cached_result
+        if not check_origin_allowed(project, request):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Request origin not allowed for this project",
+            )
+        return project, user
+
+    # Cache miss - query database with eager loading
+    project = (
+        db.query(Project)
+        .options(joinedload(Project.owner))
+        .filter(Project.api_key == x_api_key)
+        .first()
+    )
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid x-api-key passed in, no project with the given key was found",
+            detail="Invalid x-api-key passed in",
         )
 
-    # Check origin validation
     if not check_origin_allowed(project, request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -130,8 +187,10 @@ def get_project(
 
     user = project.owner
 
-    # Cache the result
-    project_cache.set(x_api_key, (project.id, user.id))
+    # Cache full objects (detach from session first)
+    db.expunge(project)
+    db.expunge(user)
+    enhanced_project_cache.set(x_api_key, (project, user))
 
     return project, user
 
