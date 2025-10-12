@@ -2,6 +2,12 @@ from datetime import datetime
 from pydantic import BaseModel
 from app.core.config import DEFAULT_PERMISSION_DICT
 from typing import Optional
+from typing import Generic, List, TypeVar
+from pydantic import BaseModel
+from pydantic.generics import GenericModel
+
+
+T = TypeVar("T")
 
 
 class CollectionPermissionsRequest(BaseModel):
@@ -55,6 +61,8 @@ class DocumentSchema(DocumentBase):
     collection: CollectionSchema
 
 
+
+
 # * AUTH SCHEMAS
 
 
@@ -70,3 +78,11 @@ class AppUser(AppUserBase):
     id: str
     client_id: str
     created_at: datetime
+
+
+class PaginatedResponse(GenericModel, Generic[T]):
+    total: int
+    limit: int
+    offset: int
+    count: int
+    results: List[T]

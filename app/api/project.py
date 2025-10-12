@@ -1,6 +1,6 @@
 from fastapi_cache.decorator import cache
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.schemas.collections import (
     CollectionPermissionsRequest,
     CollectionSchema,
     DocumentCreateSchema,
+    PaginatedResponse,
 )
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
@@ -149,7 +150,25 @@ def update_project(
     db.add(project)
     db.commit()
     db.refresh(project)
-    return project
+    owner = project.owner
+    # Prepare the list of team members with roles
+    team_members = [TeamMemberSchema(email=owner.email, role="admin")]
+    for member in project.shared_with:
+        team_members.append(TeamMemberSchema(email=member.email, role="member"))
+
+    # Manually create the response dictionary to include the owner and all members
+    return {
+        "id": project.id,
+        "name": project.name,
+        "user_id": project.user_id,
+        "api_key": project.api_key,
+        "created_at": project.created_at,
+        "allowed_origins": project.allowed_origins,
+        "callback_url": project.callback_url,
+        "configs": project.configs,
+        "owner": UserSchema.model_validate(owner),
+        "shared_with": team_members,
+    }
 
 
 # create collection
@@ -310,16 +329,20 @@ def get_collection_by_id(
     }
 
 
-# get documents in a collection
-@router.get("/{id}/collections/{collection_id}/documents")
+@router.get(
+    "/{id}/collections/{collection_id}/documents",
+    response_model=PaginatedResponse[DocumentSchema],
+)
 @cache(expire=30)
 def get_documents_in_collection(
     id: str,
     collection_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[DocumentSchema]:
-
+    limit: int = Query(20, ge=1, le=100),  # number of items per page
+    offset: int = Query(0, ge=0),  # starting index
+):
+    # 🔹 Verify project ownership or sharing
     project = (
         db.query(Project)
         .filter(
@@ -331,17 +354,37 @@ def get_documents_in_collection(
         .first()
     )
     if not project:
-        raise HTTPException(404, "Project not found")
+        raise HTTPException(status_code=404, detail="Project not found")
 
+    # 🔹 Check if collection belongs to the project
     collection = (
         db.query(Collection)
         .filter(Collection.id == collection_id, Collection.project_id == project.id)
         .first()
     )
     if not collection:
-        raise HTTPException(404, "Collection not found")
+        raise HTTPException(status_code=404, detail="Collection not found")
 
-    return collection.documents
+    # 🔹 Paginate documents safely
+    total_docs = (
+        db.query(Document).filter(Document.collection_id == collection.id).count()
+    )
+    documents = (
+        db.query(Document)
+        .filter(Document.collection_id == collection.id)
+        .order_by(Document.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return PaginatedResponse(
+        total=total_docs,
+        limit=limit,
+        offset=offset,
+        count=len(documents),
+        results=documents,
+    )
 
 
 # create a new document in a project
@@ -508,13 +551,15 @@ def update_document_in_collection(
 # project users
 
 
-# list users
-@router.get("/{id}/users")
+@router.get("/{id}/users", response_model=PaginatedResponse[AppUserResponse])
 def list_users(
     id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[AppUserResponse]:
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    # 🔹 Validate project access
     project = (
         db.query(Project)
         .filter(
@@ -525,8 +570,29 @@ def list_users(
         )
         .first()
     )
-    users = db.query(AppUser).filter(AppUser.client_id == project.id)
-    return users
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # 🔹 Fetch users belonging to this project with pagination
+    total_users = db.query(AppUser).filter(AppUser.client_id == project.id).count()
+    users = (
+        db.query(AppUser)
+        .filter(AppUser.client_id == project.id)
+        .order_by(AppUser.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return PaginatedResponse(
+        total=total_users,
+        limit=limit,
+        offset=offset,
+        count=len(users),
+        results=users,
+    )
+
+
 # update user
 @router.put("/{id}/users/{userid}")
 def update_user(
@@ -601,7 +667,7 @@ def create_user(
 
     if not payload.password:
         raise HTTPException(400, "Password is required to create a user")
-    
+
     user = AppUser(**payload.model_dump(), client_id=project.id)
     user.set_password(payload.password)
     db.add(user)
@@ -746,7 +812,7 @@ def update_project_config(
     project = (
         db.query(Project)
         .filter(
-            Project.id == id,
+            Project.id == project_id,
             or_(
                 Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
             ),
