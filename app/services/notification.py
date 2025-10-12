@@ -7,25 +7,29 @@ def send_notification_to_project_users(project_id: str, message):
     """
     Send a notification message to all users associated with a project.
     Args:
-        project (Project): The project instance containing associated users.
+        project_id (str): The project ID.
         message (str): The notification message to be sent.
     """
-    project = None
+    # Fetch project and load relationships while still in session
     with SessionLocal() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        session.expunge_all()
-    notification = f"Project '{project.name}': {message}"
+        project = session.query(Project).filter(Project.id == project_id).first()
 
-    # Collect all user IDs (owner + shared users)
-    user_ids = [project.owner.id]  # Start with project owner
+        if not project:
+            raise ValueError(f"Project with id {project_id} not found")
 
-    # Add all users the project is shared with
-    for user in project.shared_with:
-        user_ids.append(user.id)
+        notification = f"Project '{project.name}': {message}"
 
-    # Remove duplicates (in case owner is also in shared_with)
-    user_ids = list(set(user_ids))
+        # Collect all user IDs (owner + shared users) BEFORE expunging
+        user_ids = [project.owner.id]  # Start with project owner
 
+        # Add all users the project is shared with
+        for user in project.shared_with:
+            user_ids.append(user.id)
+
+        # Remove duplicates (in case owner is also in shared_with)
+        user_ids = list(set(user_ids))
+
+    # Now create notifications in a separate session
     # Prepare bulk notification data
     notifications_data = [
         {
@@ -39,8 +43,3 @@ def send_notification_to_project_users(project_id: str, message):
     with SessionLocal() as session:
         session.bulk_insert_mappings(Notification, notifications_data)
         session.commit()
-
-
-send_notification_to_project_users(
-    "bb3e92c8-86d6-4794-ba12-05825e511ee6", "This is a test notification."
-)

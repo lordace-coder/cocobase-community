@@ -24,6 +24,8 @@ from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
+import app.events.user
+
 
 app = FastAPI(
     title="CocoBase API",

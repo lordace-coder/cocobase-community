@@ -29,7 +29,7 @@ class User(Base):
     shared_projects = relationship(
         "Project", secondary=project_shares, back_populates="shared_with"
     )
-    confirmed_email = Column(Boolean,default = True)
+    confirmed_email = Column(Boolean, default=False)
 
     liked_suggestions = relationship(
         "Suggestion",

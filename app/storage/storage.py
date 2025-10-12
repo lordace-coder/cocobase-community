@@ -6,6 +6,8 @@ import os
 from typing import Dict
 import io
 
+from app.services.notification import send_notification_to_project_users
+
 
 # B2 Configuration
 B2_KEY_ID = os.getenv("BACKBLAZE_KEY_ID")
@@ -46,6 +48,10 @@ def check_storage_limit(project_id: str, file_size: int):
     """Check if uploading a file would exceed storage limit"""
     current_usage = get_project_usage(project_id)
     if current_usage + file_size > STORAGE_LIMIT_PER_PROJECT:
+        send_notification_to_project_users(
+            project_id,
+            "You have reached the storage limit for your current plan, kindly urchae a higher plan and try again.",
+        )
         raise HTTPException(
             status_code=413,
             detail=f"Storage limit exceeded. Current: {current_usage/1024/1024:.2f}MB, "
@@ -53,11 +59,12 @@ def check_storage_limit(project_id: str, file_size: int):
         )
 
 
-def get_files(project_id: str):
+def get_files(project_id: str, subdirectory: str | None):
     prefix = f"projects/{project_id}/"
+    if subdirectory != None:
+        prefix += f"{subdirectory}"
 
     response = s3_client.list_objects_v2(Bucket=B2_BUCKET, Prefix=prefix)
-
 
     files = []
     if "Contents" in response:
@@ -83,7 +90,9 @@ def get_files(project_id: str):
     return files
 
 
-def handle_file_upload(file_content: bytes, project_id: str, filename: str):
+def handle_file_upload(
+    file_content: bytes, project_id: str, filename: str, subdirectory: str | None
+):
     """
     Uploads a file's content to a B2 bucket using S3-compatible boto3.
 
@@ -97,12 +106,14 @@ def handle_file_upload(file_content: bytes, project_id: str, filename: str):
 
     # Construct the object key (S3-style path)
     s3_object_key = f"projects/{project_id}/{filename}"
+    if subdirectory != None:
+        s3_object_key += f"/{subdirectory}"
 
     # Use upload_fileobj with the new file-like object and the correct key
     try:
         res = s3_client.upload_fileobj(file_obj, B2_BUCKET, s3_object_key)
         print(f"✅ Successfully uploaded '{filename}' to S3 at '{s3_object_key}'")
-        return PUBLIC_BASE_URL+s3_object_key
+        return PUBLIC_BASE_URL + s3_object_key
     except Exception as e:
         print(f"❌ An error occurred during upload: {e}")
         # Re-raise the exception or handle it as needed

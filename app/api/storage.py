@@ -1,3 +1,4 @@
+import enum
 from fastapi import APIRouter, HTTPException, Response, UploadFile
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
@@ -20,24 +21,39 @@ from app.storage.storage import (
 router = APIRouter(prefix="/storage", tags=["Storage"])
 
 
+class DefaultDirectories:
+    templates = "__templates__"
+    static = "__static__"
+    files = "media"
+
+
 @router.get("/files/{project_id}", response_model=list[FilesSchema])
 def get_project_files(
     project_id: str,
+    directory: str = None,
 ):
     # TODO VERIFY USER HAS ACCESS TO THIS PROJECT
-    return get_files(project_id)
+    return get_files(project_id, directory)
 
 
 @router.delete("/files/{project_id}/{object_key}")
-def delete_project_files(project_id: str, filename: str):
-    key = f"projects/{project_id}/{filename}"
+def delete_project_files(project_id: str, filename: str, directory: str = None):
+    key = f"projects/{project_id}"
+    if directory != None:
+        key += f"/{directory}"
+
+    key += f"/{filename}"
     if delete_s3_file(key):
         return JSONResponse(status_code=200, content={})
     return JSONResponse(status_code=400, content={})
 
 
 @router.post("/files/{project_id}")
-async def upload_project_file(project_id: str, file: UploadFile):
+async def upload_project_file(
+    project_id: str,
+    file: UploadFile,
+    directory: str = None,
+):
     filename = file.filename.replace(" ", "_")  # Sanitize filename
     file_content = await file.read()  # Read the content into memory
     file_size = len(file_content)
@@ -46,12 +62,10 @@ async def upload_project_file(project_id: str, file: UploadFile):
 
     # Pass the content and filename to the handler
     try:
-        res = handle_file_upload(file_content, project_id, filename)
+        res = handle_file_upload(file_content, project_id, filename, directory)
         return {"message": "File uploaded successfully", "s3_response": str(res)}
     except Exception as e:
         return {"error": str(e)}, 500
-
-
 
 
 @router.get("/storage-info/{project_id}")
