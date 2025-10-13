@@ -55,7 +55,9 @@ def user_aware_key_builder(
     """Build cache key that includes user ID for security."""
     from fastapi_cache import default_key_builder
 
-    base_key = default_key_builder(func, namespace, request, response, *args, **kwargs)
+    base_key = default_key_builder(
+        func, namespace, request=request, response=response, *args, **kwargs
+    )
     user = kwargs.get("user")
 
     if user:
