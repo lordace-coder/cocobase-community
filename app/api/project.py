@@ -1,5 +1,4 @@
 from fastapi_cache.decorator import cache
-from fastapi_cache import FastAPICache
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -54,7 +53,7 @@ def user_aware_key_builder(
     **kwargs,
 ):
     """Build cache key that includes user ID for security."""
-    from fastapi_cache.decorator import default_key_builder
+    from fastapi_cache import default_key_builder
 
     base_key = default_key_builder(func, namespace, request, response, *args, **kwargs)
     user = kwargs.get("user")
