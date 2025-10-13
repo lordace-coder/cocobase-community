@@ -23,7 +23,9 @@ def build_comparison_map():
             col.astext == str(val),
             cast(col, String) == str(val),  # Cast comparison
         ),
-        "ne": lambda col, val: and_(col.astext != str(val), col != val),
+        "ne": lambda col, val: and_(
+            col.astext != str(val), cast(col, String) != str(val)
+        ),
         "contains": lambda col, val: col.astext.ilike(f"%{val}%"),
         "startswith": lambda col, val: col.astext.ilike(f"{val}%"),
         "endswith": lambda col, val: col.astext.ilike(f"%{val}"),
