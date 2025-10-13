@@ -5,7 +5,6 @@ from app.admin.backends import AdminAuth, authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
     user,
-    collections,
     coco_hooks,
     project,
     api,
@@ -14,6 +13,7 @@ from app.api import (
     collaborations,
     storage,
 )
+from app.api.collections import collections
 from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
 from app.core.database import engine

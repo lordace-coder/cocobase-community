@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 from fastapi.encoders import jsonable_encoder
 from fastapi_cache.decorator import cache
 from fastapi_cache import FastAPICache
-
+from .utilities import *
 from app.core.database import get_db
 from app.core.dependencies import get_app_user, get_project
 from app.core.middleware import track_api_call
@@ -34,278 +34,6 @@ router = APIRouter(
     tags=["Collections"],
     dependencies=[Depends(get_project), Depends(track_api_call)],
 )
-
-
-# ============================================
-# ENHANCED COMPARISON OPERATORS
-# ============================================
-
-comparison_map = {
-    "lte": lambda col, val: cast(col.astext, Integer) <= val,
-    "gte": lambda col, val: cast(col.astext, Integer) >= val,
-    "lt": lambda col, val: cast(col.astext, Integer) < val,
-    "gt": lambda col, val: cast(col.astext, Integer) > val,
-    "eq": lambda col, val: col.astext == str(val),
-    "ne": lambda col, val: col.astext != str(val),
-    "contains": lambda col, val: col.astext.ilike(f"%{val}%"),
-    "startswith": lambda col, val: col.astext.ilike(f"{val}%"),
-    "endswith": lambda col, val: col.astext.ilike(f"%{val}"),
-    "in": lambda col, val: col.astext.in_(val.split(",")),
-    "notin": lambda col, val: ~col.astext.in_(val.split(",")),
-    "isnull": lambda col, val: (
-        col.is_(None) if val.lower() in ("true", "1") else col.isnot(None)
-    ),
-}
-
-
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
-
-
-def get_collection_by_id_or_name(
-    collection_identifier: str, project_id: str, db: Session
-) -> Collection:
-    """
-    Reusable function to get collection by ID or name.
-    Optimized with single query using OR.
-    """
-    collection = (
-        db.query(Collection)
-        .filter(
-            or_(
-                Collection.id == collection_identifier,
-                Collection.name == collection_identifier,
-            ),
-            Collection.project_id == project_id,
-        )
-        .first()
-    )
-
-    if not collection:
-        raise HTTPException(404, "Collection not found")
-
-    return collection
-
-
-def parse_filter_expression(field_expr: str, value: str, operator: str = "eq"):
-    """
-    Parse a single filter expression into a SQLAlchemy filter.
-
-    Args:
-        field_expr: Field name (e.g., "age", "name")
-        value: Filter value
-        operator: Comparison operator (eq, gt, contains, etc.)
-
-    Returns:
-        SQLAlchemy filter expression or None
-    """
-    json_col = Document.data[field_expr]
-    comp_fn = comparison_map.get(operator)
-
-    if not comp_fn:
-        return None
-
-    try:
-        # Type conversion for numeric operators
-        if operator in {"lte", "gte", "lt", "gt"}:
-            typed_value = int(value)
-        else:
-            typed_value = value
-
-        return comp_fn(json_col, typed_value)
-    except (ValueError, TypeError):
-        return None
-
-
-def build_query_filters(
-    query_params: dict, base_query, reserved_params: set = None
-) -> Any:
-    """
-    Build dynamic query filters from query parameters with advanced boolean logic.
-
-    SYNTAX RULES:
-    ============
-
-    1. BASIC FILTERS (implicit AND):
-       ?age_gte=18&status=active
-       → (age >= 18) AND (status = 'active')
-
-    2. OR CONDITIONS (same value for multiple fields):
-       ?name__or__email_contains=john
-       → (name ILIKE '%john%') OR (email ILIKE '%john%')
-
-    3. AND CONDITIONS (same value for multiple fields):
-       ?firstName__and__lastName=John
-       → (firstName = 'John') AND (lastName = 'John')
-
-    4. COMPLEX OR GROUPS (using [or] prefix):
-       ?[or]age_gte=18&[or]role=admin
-       → (age >= 18) OR (role = 'admin')
-
-    5. MIXED AND/OR (grouping):
-       ?age_gte=18&status=active&[or]role=admin&[or]isVip=true
-       → (age >= 18) AND (status = 'active') AND ((role = 'admin') OR (isVip = true))
-
-    6. MULTIPLE OR GROUPS (using [or:groupname]):
-       ?[or:group1]age_gte=18&[or:group1]status=active&[or:group2]role=admin&[or:group2]isPremium=true
-       → ((age >= 18) OR (status = 'active')) AND ((role = 'admin') OR (isPremium = true))
-
-    OPERATORS:
-    =========
-    eq, ne, lt, gt, lte, gte, contains, startswith, endswith, in, notin, isnull
-
-    EXAMPLES:
-    ========
-    # Users over 18 OR admins
-    ?[or]age_gte=18&[or]role=admin
-
-    # Active users between 18-65
-    ?status=active&age_gte=18&age_lte=65
-
-    # Search in name or email
-    ?name__or__email_contains=john
-
-    # Premium users OR (active AND verified)
-    ?[or]isPremium=true&status=active&isVerified=true
-
-    # Complex: (age > 18 AND status = active) OR role = admin
-    ?[or:a]age_gte=18&[or:a]status=active&[or:b]role=admin
-    """
-    if reserved_params is None:
-        reserved_params = {"limit", "offset", "id", "sort", "order"}
-
-    # Organize filters by type
-    and_filters = []  # Default AND filters
-    or_groups = {}  # OR groups by name
-    simple_or_filters = []  # Simple [or] prefixed filters
-
-    for key, value in query_params.items():
-        if key in reserved_params:
-            continue
-
-        # Extract OR group prefix: [or], [or:groupname]
-        or_group = None
-        actual_key = key
-
-        if key.startswith("[or]"):
-            # Simple OR: [or]age_gte=18
-            actual_key = key[4:]  # Remove [or] prefix
-            or_group = "__simple_or__"
-        elif key.startswith("[or:") and "]" in key:
-            # Named OR group: [or:group1]age_gte=18
-            end_bracket = key.index("]")
-            group_name = key[4:end_bracket]
-            actual_key = key[end_bracket + 1 :]
-            or_group = group_name
-
-        # Parse the actual filter
-        # Handle multi-field OR: field1__or__field2_operator=value
-        if "__or__" in actual_key:
-            or_fields = []
-            or_parts = actual_key.split("__or__")
-
-            for field_with_op in or_parts:
-                if "_" in field_with_op:
-                    parts = field_with_op.rsplit("_", 1)
-                    if len(parts) == 2 and parts[1] in comparison_map:
-                        field, op = parts
-                    else:
-                        field, op = field_with_op, "eq"
-                else:
-                    field, op = field_with_op, "eq"
-
-                filter_expr = parse_filter_expression(field, value, op)
-                if filter_expr is not None:
-                    or_fields.append(filter_expr)
-
-            if or_fields:
-                combined = or_(*or_fields)
-                if or_group:
-                    if or_group not in or_groups:
-                        or_groups[or_group] = []
-                    or_groups[or_group].append(combined)
-                else:
-                    and_filters.append(combined)
-
-        # Handle multi-field AND: field1__and__field2_operator=value
-        elif "__and__" in actual_key:
-            and_fields = []
-            and_parts = actual_key.split("__and__")
-
-            for field_with_op in and_parts:
-                if "_" in field_with_op:
-                    parts = field_with_op.rsplit("_", 1)
-                    if len(parts) == 2 and parts[1] in comparison_map:
-                        field, op = parts
-                    else:
-                        field, op = field_with_op, "eq"
-                else:
-                    field, op = field_with_op, "eq"
-
-                filter_expr = parse_filter_expression(field, value, op)
-                if filter_expr is not None:
-                    and_fields.append(filter_expr)
-
-            if and_fields:
-                combined = and_(*and_fields)
-                if or_group:
-                    if or_group not in or_groups:
-                        or_groups[or_group] = []
-                    or_groups[or_group].append(combined)
-                else:
-                    and_filters.append(combined)
-
-        # Handle single field filters
-        else:
-            if "_" in actual_key:
-                parts = actual_key.rsplit("_", 1)
-                if len(parts) == 2 and parts[1] in comparison_map:
-                    field, op = parts
-                else:
-                    field, op = actual_key, "eq"
-            else:
-                field, op = actual_key, "eq"
-
-            filter_expr = parse_filter_expression(field, value, op)
-            if filter_expr is not None:
-                if or_group:
-                    if or_group not in or_groups:
-                        or_groups[or_group] = []
-                    or_groups[or_group].append(filter_expr)
-                else:
-                    and_filters.append(filter_expr)
-
-    # Build final filter
-    final_filters = []
-
-    # Add AND filters
-    final_filters.extend(and_filters)
-
-    # Add OR groups (each group becomes an OR clause, groups are ANDed together)
-    for group_name, group_filters in or_groups.items():
-        if group_filters:
-            if group_name == "__simple_or__":
-                # Simple OR filters are combined into one OR clause
-                final_filters.append(or_(*group_filters))
-            else:
-                # Named groups: each group is an OR clause
-                final_filters.append(or_(*group_filters))
-
-    # Apply all filters with AND
-    if final_filters:
-        base_query = base_query.filter(and_(*final_filters))
-
-    return base_query
-
-
-async def invalidate_collection_cache(collection_id: str):
-    """Invalidate all caches related to a collection."""
-    try:
-        # Clear specific collection caches
-        await FastAPICache.clear(namespace=f"collection:{collection_id}")
-    except Exception:
-        pass  # Cache invalidation shouldn't break the app
 
 
 # ============================================
@@ -456,10 +184,6 @@ def create_new_document(
     - Use helper function
     - Better error handling
     - Invalidate cache after creation
-
-    Fixed Issues:
-    - ✅ Removed optional collection (was causing confusion)
-    - ✅ Use get_or_create pattern more efficiently
     """
     project, _ = proj
 
@@ -544,6 +268,9 @@ async def list_documents(
        /documents?age_gte=18&status=active
        → age >= 18 AND status = 'active'
 
+       /documents?user_id=901235c6-9564-4de0-bb40-0c5db80d4f26
+       → Filter by exact user_id (handles underscores correctly!)
+
     2. SEARCH MULTIPLE FIELDS (OR within same value):
        /documents?name__or__email_contains=john
        → name CONTAINS 'john' OR email CONTAINS 'john'
@@ -582,6 +309,9 @@ async def list_documents(
 
     REAL-WORLD EXAMPLES:
     ===================
+
+    # Find user by ID (handles underscores in field names!)
+    GET /collections/users/documents?user_id=901235c6-9564-4de0-bb40-0c5db80d4f26
 
     # Find active users over 18 OR admins
     GET /collections/users/documents?status=active&[or]age_gte=18&[or]role=admin
@@ -638,6 +368,8 @@ async def list_documents(
 
     # Apply pagination
     results = query.offset(offset).limit(limit).all()
+
+    print(f"DEBUG: Query returned {len(results)} documents\n")
 
     # Convert to Pydantic for consistency
     return [DocumentSchema.model_validate(doc) for doc in results]
@@ -837,7 +569,7 @@ async def upload_file_to_project(
 
 
 # ============================================
-# BATCH OPERATIONS (NEW FEATURE)
+# BATCH OPERATIONS (OPTIMIZED)
 # ============================================
 
 
@@ -1032,3 +764,449 @@ def batch_update_documents(
         "message": f"Updated {updated_count} documents",
         "count": updated_count,
     }
+
+
+# ============================================
+# ADVANCED QUERY ENDPOINTS (NEW)
+# ============================================
+
+
+@router.get("/{id}/documents/count")
+async def count_documents(
+    id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
+):
+    """
+    Count documents matching filters without returning the documents.
+
+    Useful for pagination and statistics.
+
+    Example:
+        GET /collections/users/documents/count?status=active&age_gte=18
+        → Returns: {"count": 42}
+    """
+    project = proj[0]
+
+    collection = get_collection_by_id_or_name(id, project.id, db)
+
+    # Verify permissions
+    can_access_collection(collection, "read", user)
+
+    # Base query
+    query = db.query(func.count(Document.id)).filter(
+        Document.collection_id == collection.id
+    )
+
+    # Apply filters (excluding pagination params)
+    filtered_params = {
+        k: v
+        for k, v in request.query_params.items()
+        if k not in {"limit", "offset", "sort", "order"}
+    }
+
+    if filtered_params:
+        # We need to convert the count query to a regular query, apply filters, then count
+        doc_query = db.query(Document).filter(Document.collection_id == collection.id)
+        doc_query = build_query_filters(
+            filtered_params,
+            doc_query,
+            reserved_params={"id", "limit", "offset", "sort", "order"},
+        )
+        count = doc_query.count()
+    else:
+        count = query.scalar()
+
+    return {"count": count}
+
+
+@router.get("/{id}/documents/aggregate")
+async def aggregate_documents(
+    id: str,
+    request: Request,
+    field: str = Query(..., description="Field to aggregate"),
+    operation: str = Query(
+        "count", regex="^(count|sum|avg|min|max)$", description="Aggregation operation"
+    ),
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
+):
+    """
+    Perform aggregation operations on document fields.
+
+    Operations:
+    - count: Count non-null values
+    - sum: Sum numeric values
+    - avg: Average of numeric values
+    - min: Minimum value
+    - max: Maximum value
+
+    Examples:
+        GET /collections/orders/documents/aggregate?field=total&operation=sum
+        → Returns: {"field": "total", "operation": "sum", "result": 15420.50}
+
+        GET /collections/users/documents/aggregate?field=age&operation=avg&status=active
+        → Returns: {"field": "age", "operation": "avg", "result": 32.5}
+    """
+    project = proj[0]
+
+    collection = get_collection_by_id_or_name(id, project.id, db)
+
+    # Verify permissions
+    can_access_collection(collection, "read", user)
+
+    # Base query
+    query = db.query(Document).filter(Document.collection_id == collection.id)
+
+    # Apply filters (excluding aggregation params)
+    filtered_params = {
+        k: v
+        for k, v in request.query_params.items()
+        if k not in {"field", "operation", "limit", "offset", "sort", "order"}
+    }
+
+    if filtered_params:
+        query = build_query_filters(
+            filtered_params,
+            query,
+            reserved_params={
+                "id",
+                "field",
+                "operation",
+                "limit",
+                "offset",
+                "sort",
+                "order",
+            },
+        )
+
+    # Get the JSON field
+    json_field = Document.data[field]
+
+    # Perform aggregation
+    try:
+        if operation == "count":
+            result = query.filter(json_field.isnot(None)).count()
+        elif operation == "sum":
+            result = (
+                query.with_entities(func.sum(cast(json_field.astext, Integer))).scalar()
+                or 0
+            )
+        elif operation == "avg":
+            result = query.with_entities(
+                func.avg(cast(json_field.astext, Integer))
+            ).scalar()
+            result = float(result) if result is not None else None
+        elif operation == "min":
+            result = query.with_entities(
+                func.min(cast(json_field.astext, Integer))
+            ).scalar()
+        elif operation == "max":
+            result = query.with_entities(
+                func.max(cast(json_field.astext, Integer))
+            ).scalar()
+        else:
+            raise HTTPException(400, f"Unknown operation: {operation}")
+
+        return {
+            "field": field,
+            "operation": operation,
+            "result": result,
+            "collection": collection.name,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            500,
+            f"Aggregation failed. Ensure the field contains numeric values: {str(e)}",
+        )
+
+
+@router.get("/{id}/documents/group-by")
+async def group_by_field(
+    id: str,
+    request: Request,
+    field: str = Query(..., description="Field to group by"),
+    count_field: Optional[str] = Query(
+        None, description="Field to count (default: document count)"
+    ),
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
+):
+    """
+    Group documents by a field and count occurrences.
+
+    Examples:
+        GET /collections/users/documents/group-by?field=country
+        → Returns: [
+            {"country": "US", "count": 150},
+            {"country": "UK", "count": 80},
+            {"country": "CA", "count": 45}
+          ]
+
+        GET /collections/orders/documents/group-by?field=status&status_ne=cancelled
+        → Returns: [
+            {"status": "completed", "count": 320},
+            {"status": "pending", "count": 45}
+          ]
+    """
+    project = proj[0]
+
+    collection = get_collection_by_id_or_name(id, project.id, db)
+
+    # Verify permissions
+    can_access_collection(collection, "read", user)
+
+    # Base query
+    query = db.query(Document).filter(Document.collection_id == collection.id)
+
+    # Apply filters (excluding group-by params)
+    filtered_params = {
+        k: v
+        for k, v in request.query_params.items()
+        if k not in {"field", "count_field", "limit", "offset", "sort", "order"}
+    }
+
+    if filtered_params:
+        query = build_query_filters(
+            filtered_params,
+            query,
+            reserved_params={
+                "id",
+                "field",
+                "count_field",
+                "limit",
+                "offset",
+                "sort",
+                "order",
+            },
+        )
+
+    # Get the JSON field to group by
+    json_field = Document.data[field].astext
+
+    try:
+        # Group by and count
+        results = (
+            query.with_entities(json_field, func.count(Document.id))
+            .group_by(json_field)
+            .order_by(func.count(Document.id).desc())
+            .all()
+        )
+
+        return [
+            {field: value, "count": count}
+            for value, count in results
+            if value is not None
+        ]
+
+    except Exception as e:
+        raise HTTPException(500, f"Group by failed: {str(e)}")
+
+
+# ============================================
+# UTILITY ENDPOINTS
+# ============================================
+
+
+@router.get("/{id}/schema")
+async def get_collection_schema(
+    id: str,
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
+):
+    """
+    Analyze collection documents and return inferred schema.
+
+    Returns field names, types, and sample values.
+    Useful for understanding your data structure.
+    """
+    project = proj[0]
+
+    collection = get_collection_by_id_or_name(id, project.id, db)
+
+    # Verify permissions
+    can_access_collection(collection, "read", user)
+
+    # Get a sample of documents
+    sample_docs = (
+        db.query(Document)
+        .filter(Document.collection_id == collection.id)
+        .limit(100)
+        .all()
+    )
+
+    if not sample_docs:
+        return {
+            "collection": collection.name,
+            "document_count": 0,
+            "fields": {},
+        }
+
+    # Analyze field types
+    field_analysis = {}
+
+    for doc in sample_docs:
+        if not doc.data:
+            continue
+
+        for key, value in doc.data.items():
+            if key not in field_analysis:
+                field_analysis[key] = {
+                    "type": set(),
+                    "samples": [],
+                    "null_count": 0,
+                    "total_count": 0,
+                }
+
+            field_analysis[key]["total_count"] += 1
+
+            if value is None:
+                field_analysis[key]["null_count"] += 1
+                continue
+
+            # Determine type
+            value_type = type(value).__name__
+            field_analysis[key]["type"].add(value_type)
+
+            # Add sample (limit to 3 samples)
+            if len(field_analysis[key]["samples"]) < 3:
+                field_analysis[key]["samples"].append(value)
+
+    # Format results
+    schema = {}
+    for field, analysis in field_analysis.items():
+        types = list(analysis["type"])
+        schema[field] = {
+            "types": types,
+            "primary_type": types[0] if types else "unknown",
+            "nullable": analysis["null_count"] > 0,
+            "null_percentage": round(
+                (analysis["null_count"] / analysis["total_count"]) * 100, 2
+            ),
+            "samples": analysis["samples"],
+        }
+
+    total_docs = (
+        db.query(func.count(Document.id))
+        .filter(Document.collection_id == collection.id)
+        .scalar()
+    )
+
+    return {
+        "collection": collection.name,
+        "document_count": total_docs,
+        "analyzed_documents": len(sample_docs),
+        "fields": schema,
+    }
+
+
+@router.get("/{id}/export")
+async def export_collection(
+    id: str,
+    request: Request,
+    format: str = Query("json", regex="^(json|csv)$"),
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    user: AppUser = Depends(get_app_user),
+):
+    """
+    Export collection data to JSON or CSV.
+
+    Supports filtering - only exports documents matching the filters.
+
+    Examples:
+        GET /collections/users/export?format=json
+        GET /collections/users/export?format=csv&status=active&age_gte=18
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+    import io
+    import csv
+
+    project = proj[0]
+
+    collection = get_collection_by_id_or_name(id, project.id, db)
+
+    # Verify permissions
+    can_access_collection(collection, "read", user)
+
+    # Base query
+    query = db.query(Document).filter(Document.collection_id == collection.id)
+
+    # Apply filters
+    filtered_params = {
+        k: v
+        for k, v in request.query_params.items()
+        if k not in {"format", "limit", "offset", "sort", "order"}
+    }
+
+    if filtered_params:
+        query = build_query_filters(
+            filtered_params,
+            query,
+            reserved_params={"id", "format", "limit", "offset", "sort", "order"},
+        )
+
+    documents = query.all()
+
+    if format == "json":
+        # Export as JSON
+        data = [
+            {
+                "id": str(doc.id),
+                "created_at": doc.created_at.isoformat(),
+                **doc.data,
+            }
+            for doc in documents
+        ]
+
+        json_str = json.dumps(data, indent=2, default=str)
+
+        return StreamingResponse(
+            io.BytesIO(json_str.encode()),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{collection.name}_export.json"'
+            },
+        )
+
+    elif format == "csv":
+        # Export as CSV
+        if not documents:
+            raise HTTPException(400, "No documents to export")
+
+        # Get all unique fields
+        all_fields = set()
+        for doc in documents:
+            if doc.data:
+                all_fields.update(doc.data.keys())
+
+        fields = ["id", "created_at"] + sorted(all_fields)
+
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+
+        for doc in documents:
+            row = {
+                "id": str(doc.id),
+                "created_at": doc.created_at.isoformat(),
+            }
+            if doc.data:
+                row.update(doc.data)
+            writer.writerow(row)
+
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode()),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{collection.name}_export.csv"'
+            },
+        )
