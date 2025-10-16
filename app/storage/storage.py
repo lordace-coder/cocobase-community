@@ -105,9 +105,10 @@ def handle_file_upload(
     file_obj = io.BytesIO(file_content)
 
     # Construct the object key (S3-style path)
-    s3_object_key = f"projects/{project_id}/{filename}"
+    s3_object_key = f"projects/{project_id}"
     if subdirectory != None:
         s3_object_key += f"/{subdirectory}"
+    s3_object_key += f"{filename}"
 
     # Use upload_fileobj with the new file-like object and the correct key
     try:

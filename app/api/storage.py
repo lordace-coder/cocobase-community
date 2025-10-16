@@ -36,7 +36,7 @@ def get_project_files(
     return get_files(project_id, directory)
 
 
-@router.delete("/files/{project_id}/{object_key}")
+@router.delete("/files/{project_id}/")
 def delete_project_files(project_id: str, filename: str, directory: str = None):
     key = f"projects/{project_id}"
     if directory != None:
