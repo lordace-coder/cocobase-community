@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
-from app.admin.backends import AdminAuth, authentication_backend
+from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
     user,
@@ -13,6 +13,7 @@ from app.api import (
     collaborations,
     storage,
 )
+
 from app.api.collections import collections
 from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
@@ -24,12 +25,11 @@ from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
-import app.events.user
 
 
 app = FastAPI(
     title="CocoBase API",
-    version="0.0.1",
+    version="1.0.0",
     description="Api docs for COCOBASE",
     docs_url="/",
     redoc_url=None,
@@ -39,10 +39,10 @@ admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 # app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
 
@@ -61,12 +61,8 @@ async def shutdown_event():
 
 # Include routers
 app.include_router(user.router, tags=["Authentication"])
-app.include_router(
-    project.router,
-)
-app.include_router(
-    collections.router,
-)
+app.include_router(collections.router)
+app.include_router(project.router)
 app.include_router(api.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
