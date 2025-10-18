@@ -26,7 +26,6 @@ from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
 
-
 app = FastAPI(
     title="CocoBase API",
     version="1.0.0",
@@ -44,6 +43,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 # app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
 
 
