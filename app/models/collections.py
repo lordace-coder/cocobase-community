@@ -13,9 +13,16 @@ class Collection(Base):
 
     name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    project_id = Column(
+        String,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
-    project = relationship("Project", back_populates="collections")
+    project = relationship(
+        "Project", back_populates="collections", cascade="all, delete-orphan"
+    )
     documents = relationship(
         "Document",
         back_populates="collection",

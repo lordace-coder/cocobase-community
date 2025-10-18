@@ -32,7 +32,6 @@ def get_project_files(
     project_id: str,
     directory: str = None,
 ):
-    # TODO VERIFY USER HAS ACCESS TO THIS PROJECT
     return get_files(project_id, directory)
 
 
