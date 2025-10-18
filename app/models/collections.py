@@ -21,7 +21,7 @@ class Collection(Base):
     )
 
     project = relationship(
-        "Project", back_populates="collections", cascade="all, delete-orphan"
+        "Project", back_populates="collections", 
     )
     documents = relationship(
         "Document",
