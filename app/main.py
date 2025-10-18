@@ -4,6 +4,7 @@ from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
+    integrations,
     user,
     coco_hooks,
     project,
@@ -64,6 +65,7 @@ app.include_router(user.router, tags=["Authentication"])
 app.include_router(collections.router)
 app.include_router(project.router)
 app.include_router(api.router)
+app.include_router(integrations.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
 app.include_router(payments.router)
