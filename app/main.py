@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
+from app.admin import *
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
@@ -37,6 +37,7 @@ app = FastAPI(
 )
 
 admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -45,7 +46,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
 
 
 @app.on_event("startup")
@@ -106,3 +106,5 @@ admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
 admin.add_view(ProjectModel)
+admin.add_view(IntegrationsModel)
+admin.add_view(ProjectIntegrationModel)
