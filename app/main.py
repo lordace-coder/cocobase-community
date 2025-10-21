@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.admin import UserAdmin, PricingPlanModel, ProjectSubscriptionModel
+from app.admin import *
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
+    integrations,
     user,
     coco_hooks,
     project,
@@ -35,6 +36,7 @@ app = FastAPI(
 )
 
 admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +67,7 @@ app.include_router(user.router, tags=["Authentication"])
 app.include_router(collections.router)
 app.include_router(project.router)
 app.include_router(api.router)
+app.include_router(integrations.router)
 app.include_router(documents.router)
 app.include_router(auth_collection.router)
 app.include_router(payments.router)
@@ -105,3 +108,5 @@ admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
 admin.add_view(ProjectModel)
+admin.add_view(IntegrationsModel)
+admin.add_view(ProjectIntegrationModel)

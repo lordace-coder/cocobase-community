@@ -700,16 +700,13 @@ def delete_user(
 ):
     """Optimized: Use helper function."""
     project = get_project_with_access(project_id, user, db)
-
     result = (
         db.query(AppUser)
         .filter(AppUser.id == id, AppUser.client_id == project.id)
         .delete(synchronize_session=False)
     )
-
     if not result:
         raise HTTPException(404, "App user not found")
-
     db.commit()
     return {"message": "User deleted successfully"}
 

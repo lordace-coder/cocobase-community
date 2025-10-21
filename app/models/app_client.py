@@ -39,6 +39,7 @@ class Project(Base):
     allowed_origins = Column(PickleType, nullable=True)
     callback_url = Column(String, nullable=True)
     configs = Column(JSON, default=dict)
+    integrations = relationship("ProjectIntegration", back_populates="project")
 
     # Relationships
     owner = relationship("User", back_populates="projects")
