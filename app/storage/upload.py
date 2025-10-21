@@ -2,9 +2,6 @@
 from fastapi import UploadFile
 from app.storage.storage import check_storage_limit,s3_client
 
-# TODO CREATE FUNCTION FOR LISTING  FILES IN A PROJECT
-# TODO CREATE FUNC FOR DELETING FILES AND FORMATING PROJECT STORAGE
-
 async def upload_file_to_project(project_id :str,file:UploadFile):
     file_content = await file.read()
     file_size = len(file_content)

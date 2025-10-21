@@ -86,6 +86,8 @@ def create_new_user(
     ):
         raise HTTPException(400, "User with this email already exists")
     else:
+        # todo check if user has reached his create user limit
+
         # create new user
         user = AppUser(**payload.model_dump())
         user.set_password(payload.password)

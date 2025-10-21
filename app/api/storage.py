@@ -15,8 +15,6 @@ from app.storage.storage import (
     get_project_usage,
 )
 
-# TODO IMPLEMEN FILE UPLOAD HERE AS WELL AS DELETE
-# TODO IMPLEMENT FILE UPLOAD INSIDE THE COLLECTION FOR THE CLIENT
 
 router = APIRouter(prefix="/storage", tags=["Storage"])
 

@@ -37,7 +37,8 @@ class User(Base):
         back_populates="liked_by_users",
     )
     is_staff = Column(Boolean, default=False)
-
+    payments = relationship("Payment", back_populates="user")
+    
     def set_password(self, password: str) -> None:
         self.password = hash_password(password)
 

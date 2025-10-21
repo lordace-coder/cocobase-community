@@ -51,3 +51,25 @@ async def send_email(
     except Exception as e:
         print(f"Unexpected error: {e}")
         return False
+
+
+async def send_subscription_email(
+    to_email,
+    user_name,
+    plan_name,
+    amount,
+    currency,
+    subscription_end_date,
+):
+    await send_email(
+        to=to_email,
+        subject="Successfull Subscription",
+        context={
+            "user_name": user_name,
+            "plan_name": plan_name,
+            "amount": amount,
+            "currency": currency,
+            "subscription_end_date": subscription_end_date,
+        },
+        template="98628178-1446-427f-88f5-aa4ac29ecce2",
+    )

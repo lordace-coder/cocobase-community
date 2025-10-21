@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Index,
     JSON,
+    Boolean,
     Table,
     UniqueConstraint,
     func,
@@ -49,7 +50,11 @@ class Project(Base):
     shared_with = relationship(
         "User", secondary=project_shares, back_populates="shared_projects"
     )
-    subscriptions = relationship("ProjectSubscription", back_populates="project")
+    subscriptions = relationship(
+        "ProjectSubscription", back_populates="project", cascade="all, delete-orphan"
+    )
+    payments = relationship("Payment", back_populates="project")
+    active = Column(Boolean, default=True)
 
     def __repr__(self):
         return f"{self.name} owned by {self.user_id}"

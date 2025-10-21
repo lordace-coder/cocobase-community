@@ -163,6 +163,11 @@ def get_project(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Request origin not allowed for this project",
             )
+        if not project.active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Inactive Project, Upgrade to continue or contact support.",
+            )
         return project, user
 
     # Cache miss - query database with eager loading
@@ -173,6 +178,11 @@ def get_project(
         .first()
     )
 
+    if not project.active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Inactive Project, Upgrade to continue or contact support.",
+        )
     if not project:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

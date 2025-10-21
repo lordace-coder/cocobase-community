@@ -1,15 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
+from app.api.project import get_project_with_access
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.pricing import PricingPlan
+from app.models.pricing import PricingPlan, ProjectSubscription, Payment
 from app.models.user import User
+from app.models.app_client import Project
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc
 from app.schemas.payments import PricingPlanSchema
 import httpx
 import os
 from dotenv import load_dotenv
 import hmac
 import hashlib
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -24,82 +28,192 @@ async def get_subscription_plans(
     db: Session = Depends(get_db),
 ) -> list[PricingPlanSchema]:
     """
-    Fetch available subscription plans from the external payment service.
+    Fetch available subscription plans.
     """
-    plans = db.query(PricingPlan).all()
+    plans = db.query(PricingPlan).filter(PricingPlan.is_active == True).all()
     return plans
+
+
+@router.get("/project/{project_id}/current", summary="Get project's current plan")
+async def get_project_current_plan(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current active subscription plan for a project.
+    """
+    # Verify user has access to project
+    project = get_project_with_access(project_id, user, db)
+
+    # Get active subscription
+    subscription = (
+        db.query(ProjectSubscription)
+        .filter(
+            and_(
+                ProjectSubscription.project_id == project_id,
+                ProjectSubscription.is_active == True,
+            )
+        )
+        .first()
+    )
+
+    if not subscription:
+        return {
+            "status": "no_subscription",
+            "message": "Project has no active subscription",
+            "project_id": project_id,
+            "project_name": project.name,
+        }
+
+    # Check if expired
+    is_expired = subscription.is_expired()
+    days_remaining = subscription.days_remaining()
+
+    return {
+        "status": "active" if not is_expired else "expired",
+        "subscription_id": subscription.id,
+        "plan": {
+            "id": subscription.plan.id,
+            "name": subscription.plan.name,
+            "description": subscription.plan.description,
+            "price": subscription.plan.price,
+            "currency": subscription.plan.currency,
+            "features": subscription.plan.features,
+            "max_requests_per_month": subscription.plan.max_requests_per_month,
+            "max_storage_mb": subscription.plan.max_storage_mb,
+            "max_users": subscription.plan.max_users,
+            "max_cloud_functions": subscription.plan.max_cloud_functions,
+        },
+        "start_date": subscription.start_date,
+        "end_date": subscription.end_date,
+        "days_remaining": days_remaining,
+        "is_expired": is_expired,
+        "auto_renew": subscription.auto_renew,
+        "project": {"id": project.id, "name": project.name},
+    }
 
 
 @router.post("/initialize-subscription-payment/{plan_id}", summary="Initialize payment")
 async def initialize_payment(
     plan_id: int,
+    project_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Initialize a Paystack payment for a subscription plan.
+    Initialize a Paystack payment for a project subscription plan.
     Returns authorization URL for the user to complete payment.
+    Anyone can pay for any project.
     """
+    # Verify project exists (no ownership check)
+    project = db.query(Project).filter(Project.id == project_id).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
     # Get the pricing plan
-    plan = db.query(PricingPlan).filter(PricingPlan.id == plan_id).first()
+    plan = (
+        db.query(PricingPlan)
+        .filter(and_(PricingPlan.id == plan_id, PricingPlan.is_active == True))
+        .first()
+    )
+
     if not plan:
         raise HTTPException(status_code=404, detail="Pricing plan not found")
-    
-    # Prepare payment data
-    # Paystack amount is in kobo (smallest currency unit), multiply by 100
+
+    if plan.is_free:
+        raise HTTPException(
+            status_code=400, detail="Cannot initialize payment for free plan"
+        )
+
+    # Create payment record
+    payment = Payment(
+        reference=f"PAY-{project_id}-{plan_id}-{int(datetime.utcnow().timestamp())}",
+        provider="paystack",
+        amount=plan.price,
+        currency=plan.currency,
+        status="pending",
+        project_id=project_id,
+        user_id=user.id,
+        plan_id=plan_id,
+        payment_metadata={
+            "project_name": project.name,
+            "plan_name": plan.name,
+            "user_email": user.email,
+        },
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+
+    # Prepare Paystack payment data
     amount_in_kobo = int(plan.price * 100)
-    
+
     payload = {
         "email": user.email,
         "amount": amount_in_kobo,
-        "currency": "NGN",  # Adjust based on your needs
+        "currency": plan.currency,
+        "reference": payment.reference,
         "metadata": {
+            "payment_id": payment.id,
             "user_id": user.id,
+            "project_id": project_id,
             "plan_id": plan.id,
+            "project_name": project.name,
             "plan_name": plan.name,
         },
         "callback_url": f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/payment/verify",
     }
-    
+
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
     }
-    
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{PAYSTACK_BASE_URL}/transaction/initialize",
                 json=payload,
                 headers=headers,
-                timeout=30.0
+                timeout=30.0,
             )
-            
+
             if response.status_code != 200:
+                payment.status = "failed"
+                db.commit()
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Payment initialization failed: {response.text}"
+                    detail=f"Payment initialization failed: {response.text}",
                 )
-            
+
             data = response.json()
-            
+
             if not data.get("status"):
+                payment.status = "failed"
+                db.commit()
                 raise HTTPException(
-                    status_code=400,
-                    detail="Payment initialization failed"
+                    status_code=400, detail="Payment initialization failed"
                 )
-            
+
+            # Store provider response
+            payment.provider_response = data
+            db.commit()
+
             return {
                 "status": "success",
+                "payment_id": payment.id,
                 "authorization_url": data["data"]["authorization_url"],
                 "access_code": data["data"]["access_code"],
-                "reference": data["data"]["reference"],
+                "reference": payment.reference,
             }
-            
+
     except httpx.HTTPError as e:
+        payment.status = "failed"
+        db.commit()
         raise HTTPException(
-            status_code=500,
-            detail=f"Error connecting to payment service: {str(e)}"
+            status_code=500, detail=f"Error connecting to payment service: {str(e)}"
         )
 
 
@@ -112,71 +226,84 @@ async def verify_payment(
     """
     Verify a payment transaction with Paystack.
     This endpoint should be called after the user completes payment.
+    Only processes if webhook hasn't already processed it.
+    Anyone can verify any payment.
     """
+    # Get payment record
+    payment = db.query(Payment).filter(Payment.reference == reference).first()
+
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    # If webhook already processed, return existing status
+    if payment.webhook_received and payment.status == "success":
+        return {
+            "status": "success",
+            "message": "Payment already verified and subscription activated",
+            "already_processed": True,
+            "payment": {
+                "reference": payment.reference,
+                "amount": payment.amount,
+                "currency": payment.currency,
+                "paid_at": payment.paid_at,
+            },
+        }
+
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
     }
-    
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
                 headers=headers,
-                timeout=30.0
+                timeout=30.0,
             )
-            
+
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Payment verification failed: {response.text}"
+                    detail=f"Payment verification failed: {response.text}",
                 )
-            
+
             data = response.json()
-            
+
             if not data.get("status"):
                 raise HTTPException(
-                    status_code=400,
-                    detail="Payment verification failed"
+                    status_code=400, detail="Payment verification failed"
                 )
-            
+
             transaction_data = data["data"]
-            
+
             # Check if payment was successful
             if transaction_data["status"] != "success":
+                payment.status = "failed"
+                db.commit()
                 return {
                     "status": "failed",
                     "message": "Payment was not successful",
-                    "transaction_status": transaction_data["status"]
+                    "transaction_status": transaction_data["status"],
                 }
-            
-            # Extract metadata
-            metadata = transaction_data.get("metadata", {})
-            plan_id = metadata.get("plan_id")
-            
-            if not plan_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid payment metadata"
-                )
-            
-            # Process subscription
-            await process_subscription(user, plan_id, transaction_data, db)
-            
+
+            # Only process if not already processed by webhook
+            if not payment.webhook_received:
+                await process_subscription(payment, transaction_data, db)
+
             return {
                 "status": "success",
                 "message": "Payment verified and subscription activated",
-                "transaction": {
-                    "reference": transaction_data["reference"],
-                    "amount": transaction_data["amount"] / 100,  # Convert from kobo
-                    "currency": transaction_data["currency"],
-                    "paid_at": transaction_data["paid_at"],
-                }
+                "payment": {
+                    "reference": payment.reference,
+                    "amount": payment.amount,
+                    "currency": payment.currency,
+                    "paid_at": payment.paid_at,
+                },
             }
-            
+
     except httpx.HTTPError as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error connecting to payment service: {str(e)}"
+            status_code=500, detail=f"Error connecting to payment service: {str(e)}"
         )
 
 
@@ -193,83 +320,179 @@ async def paystack_webhook(
     signature = request.headers.get("x-paystack-signature")
     if not signature:
         raise HTTPException(status_code=400, detail="No signature provided")
-    
+
     body = await request.body()
-    
+
     # Compute HMAC signature
     computed_signature = hmac.new(
-        PAYSTACK_SECRET_KEY.encode('utf-8'),
-        body,
-        hashlib.sha512
+        PAYSTACK_SECRET_KEY.encode("utf-8"), body, hashlib.sha512
     ).hexdigest()
-    
+
     if not hmac.compare_digest(signature, computed_signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
-    
+
     # Parse webhook data
     payload = await request.json()
     event = payload.get("event")
     data = payload.get("data", {})
-    
-    # Handle different event types
+
+    # Handle charge.success event
     if event == "charge.success":
-        # Extract user and plan info from metadata
-        metadata = data.get("metadata", {})
-        user_id = metadata.get("user_id")
-        plan_id = metadata.get("plan_id")
-        
-        if user_id and plan_id:
-            user = db.query(User).filter(User.id == user_id).first()
-            if user:
-                await process_subscription(user, plan_id, data, db)
-    
+        reference = data.get("reference")
+
+        if not reference:
+            return {"status": "ignored", "reason": "No reference"}
+
+        # Find payment record
+        payment = db.query(Payment).filter(Payment.reference == reference).first()
+
+        if not payment:
+            return {"status": "ignored", "reason": "Payment not found"}
+
+        # Check if already processed
+        if payment.webhook_received and payment.status == "success":
+            return {"status": "already_processed"}
+
+        # Mark webhook as received
+        payment.webhook_received = True
+        payment.webhook_received_at = datetime.utcnow()
+        db.commit()
+
+        # Process subscription
+        await process_subscription(payment, data, db)
+
     return {"status": "success"}
 
 
-async def process_subscription(
-    user: User,
-    plan_id: int,
-    transaction_data: dict,
-    db: Session
+@router.get(
+    "/project/{project_id}/payment-history", summary="Get project payment history"
+)
+async def get_project_payment_history(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 10,
+    offset: int = 0,
 ):
     """
-    Process subscription after successful payment.
-    Updates user subscription status and sends notification email.
+    Get payment history for a project.
     """
-    from datetime import datetime, timedelta
-    from app.services.email import send_subscription_email  # You'll need to create this
-    
-    # Get the plan
-    plan = db.query(PricingPlan).filter(PricingPlan.id == plan_id).first()
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    
-    # Update user subscription
-    user.subscription_plan_id = plan.id
-    user.subscription_status = "active"
-    user.subscription_start_date = datetime.utcnow()
-    
-    # Calculate end date based on plan duration (assuming monthly)
-    user.subscription_end_date = datetime.utcnow() + timedelta(days=30)
-    
-    # Store payment reference
-    user.last_payment_reference = transaction_data.get("reference")
-    
-    db.commit()
-    db.refresh(user)
-    
-    # Send confirmation email
+    # Verify user has access to project
+    project = get_project_with_access(project_id, user, db)
+
+    # Get payments
+    payments = (
+        db.query(Payment)
+        .filter(Payment.project_id == project_id)
+        .order_by(desc(Payment.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    total = db.query(Payment).filter(Payment.project_id == project_id).count()
+
+    return {
+        "payments": [
+            {
+                "id": p.id,
+                "reference": p.reference,
+                "amount": p.amount,
+                "currency": p.currency,
+                "status": p.status,
+                "provider": p.provider,
+                "plan_name": p.plan.name if p.plan else None,
+                "paid_at": p.paid_at,
+                "created_at": p.created_at,
+            }
+            for p in payments
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+async def process_subscription(payment: Payment, transaction_data: dict, db: Session):
+    """
+    Process subscription after successful payment.
+    Updates payment and project subscription status.
+    """
+    from app.services.email import send_subscription_email
+
     try:
-        await send_subscription_email(
-            to_email=user.email,
-            user_name=user.name or user.email,
-            plan_name=plan.name,
-            amount=transaction_data["amount"] / 100,
-            currency=transaction_data["currency"],
-            subscription_end_date=user.subscription_end_date
+        # Update payment status
+        payment.status = "success"
+        payment.paid_at = datetime.utcnow()
+        payment.provider_response = transaction_data
+
+        # Get or create project subscription
+        subscription = (
+            db.query(ProjectSubscription)
+            .filter(
+                and_(
+                    ProjectSubscription.project_id == payment.project_id,
+                    ProjectSubscription.is_active == True,
+                )
+            )
+            .first()
         )
+
+        plan = db.query(PricingPlan).filter(PricingPlan.id == payment.plan_id).first()
+
+        if not plan:
+            raise Exception("Plan not found")
+
+        now = datetime.utcnow()
+
+        if subscription:
+            # Upgrade/renew existing subscription
+            subscription.plan_id = plan.id
+            subscription.start_date = now
+            subscription.end_date = now + timedelta(days=plan.duration_days or 30)
+            subscription.is_active = True
+        else:
+            # Create new subscription
+            subscription = ProjectSubscription(
+                project_id=payment.project_id,
+                plan_id=plan.id,
+                start_date=now,
+                end_date=now + timedelta(days=plan.duration_days or 30),
+                is_active=True,
+                auto_renew=True,
+            )
+            db.add(subscription)
+
+        db.flush()
+
+        # Link payment to subscription
+        payment.subscription_id = subscription.id
+
+        db.commit()
+        db.refresh(payment)
+        db.refresh(subscription)
+
+        # Send confirmation email
+        try:
+            user = db.query(User).filter(User.id == payment.user_id).first()
+            project = db.query(Project).filter(Project.id == payment.project_id).first()
+
+            if user and project:
+                await send_subscription_email(
+                    to_email=user.email,
+                    user_name=user.name or user.email,
+                    project_name=project.name,
+                    plan_name=plan.name,
+                    amount=payment.amount,
+                    currency=payment.currency,
+                    subscription_end_date=subscription.end_date,
+                )
+        except Exception as e:
+            print(f"Failed to send email: {str(e)}")
+
+        return subscription
+
     except Exception as e:
-        # Log the error but don't fail the subscription
-        print(f"Failed to send email: {str(e)}")
-    
-    return user
+        payment.status = "failed"
+        db.commit()
+        raise e
