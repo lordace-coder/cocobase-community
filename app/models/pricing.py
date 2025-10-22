@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
+    Index,
     Integer,
     String,
     Float,
@@ -12,6 +13,8 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.models.app_client import Project
+from sqlalchemy.orm import Session
 
 
 class Payment(Base):
@@ -173,3 +176,36 @@ class ProjectSubscription(Base):
 
     def __repr__(self):
         return f"{self.plan.name} plan for {self.project.name}"
+
+
+def get_current_plan(project: Project, db: Session) -> PricingPlan:
+    active_sub = (
+        db.query(ProjectSubscription)
+        .filter(
+            ProjectSubscription.project_id == project.id,
+            ProjectSubscription.is_active == True,
+        )
+        .order_by(ProjectSubscription.start_date.desc())
+        .first()
+    )
+    return (
+        active_sub.plan
+        if active_sub
+        else db.query(PricingPlan).filter_by(is_free=True).first()
+    )
+
+
+
+class ApiUsageCounter(Base):
+    __tablename__ = "api_usage_counters"
+    
+    id = Column(Integer, primary_key=True)
+    project_id = Column(String, nullable=False, index=True)
+    month = Column(String(7), nullable=False)  # Format: "2025-10"
+    request_count = Column(Integer, default=0, nullable=False)
+    last_synced_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index('idx_project_month', 'project_id', 'month', unique=True),
+    )

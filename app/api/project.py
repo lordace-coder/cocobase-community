@@ -11,11 +11,12 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
-from app.api.auth_collection import AppUserSchema, AppUserResponse, AppUserUpdateSchema
+from app.schemas.auth_collection import AppUserSchema, AppUserResponse, AppUserUpdateSchema
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, verify_project_access
+from app.core.dependencies import get_current_user, get_project_with_access, verify_project_access
 from app.core.middleware import track_api_call
 from app.models.collections import Collection, Document
+from app.models.pricing import get_current_plan
 from app.models.user import User
 from app.models.app_client import Project, AppUser
 from app.schemas.collections import (
@@ -28,6 +29,7 @@ from app.schemas.collections import (
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.schemas.user import TeamMemberSchema, UserSchema
+from app.services.email import notify_limit_reached, notify_limit_warning
 from app.services.utils import generate_api_key, handle_webhook_call
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 from app.core.config import DEFAULT_PERMISSION_DICT
@@ -68,29 +70,6 @@ def user_aware_key_builder(
 # ============================================
 # HELPER FUNCTIONS (DRY Principle)
 # ============================================
-
-
-def get_project_with_access(project_id: str, user: User, db: Session) -> Project:
-    """
-    Reusable function to get project with access check.
-    Optimized with single query.
-    """
-    project = (
-        db.query(Project)
-        .filter(
-            Project.id == project_id,
-            or_(
-                Project.user_id == user.id, Project.shared_with.any(User.id == user.id)
-            ),
-        )
-        .first()
-    )
-
-    if not project:
-        raise HTTPException(404, "Project not found or access denied")
-
-    return project
-
 
 def get_collection_with_access(
     collection_id: str, project: Project, db: Session
@@ -640,32 +619,81 @@ def update_user(
 @router.post("/{id}/users", status_code=201)
 def create_user(
     id: str,
+    bg: BackgroundTasks,
     payload: AppUserSchema,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AppUserResponse:
     """Optimized: Use helper function and exists() check."""
     project = get_project_with_access(id, user, db)
-
-    if not payload.password:
-        raise HTTPException(400, "Password is required")
-
+    plan = get_current_plan(project, db)
+    
+    # Check if user limit has been reached
+    # max_users = 0 or None means unlimited users
+    if plan.max_users is not None and plan.max_users > 0:
+        current_user_count = db.query(func.count(AppUser.id)).filter(
+            AppUser.client_id == project.id
+        ).scalar()
+        
+        # Hard limit - deactivate project
+        if current_user_count >= plan.max_users:
+            project.is_active = False
+            db.commit()
+            
+            # Notify user in background
+            bg.add_task(
+                notify_limit_reached, 
+                user, 
+                project, 
+                "users", 
+                plan.max_users
+            )
+            
+            raise HTTPException(
+                status_code=403,
+                detail=f"User limit reached ({plan.max_users}). Project has been deactivated. Please upgrade your plan."
+            )
+        
+        # Soft limit - warning at 80% and 90%
+        usage_percentage = (current_user_count / plan.max_users) * 100
+        
+        if usage_percentage >= 90:
+            bg.add_task(
+                notify_limit_warning,
+                user,
+                project,
+                "users",
+                current_user_count,
+                plan.max_users,
+                "critical"  # 90%+ is critical
+            )
+        elif usage_percentage >= 80:
+            bg.add_task(
+                notify_limit_warning,
+                user,
+                project,
+                "users",
+                current_user_count,
+                plan.max_users,
+                "warning"  # 80-89% is warning
+            )
+    
     # Optimized existence check
     exists = db.query(
         db.query(AppUser)
         .filter(AppUser.client_id == project.id, AppUser.email == payload.email)
         .exists()
     ).scalar()
-
+    
     if exists:
         raise HTTPException(400, "User with this email already exists")
-
+    
     app_user = AppUser(**payload.model_dump(), client_id=project.id)
     app_user.set_password(payload.password)
-
     db.add(app_user)
     db.commit()
     db.refresh(app_user)
+    
     return app_user
 
 

@@ -480,7 +480,7 @@ async def process_subscription(payment: Payment, transaction_data: dict, db: Ses
             if user and project:
                 await send_subscription_email(
                     to_email=user.email,
-                    user_name=user.name or user.email,
+                    user_name=user.full_name or user.email,
                     project_name=project.name,
                     plan_name=plan.name,
                     amount=payment.amount,

@@ -12,38 +12,16 @@ from app.models.app_client import AppUser
 from app.services.google_login_helper import generate_oauth_url
 from app.services.jwt import create_app_user_token, decode_app_user_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
-
+from app.schemas.auth_collection import (
+    AppTokenResponse,
+    AppUserSchema,
+    AppUserResponse,
+    AppUserUpdateSchema,
+)
 from app.services.oauth2_helper import TOKEN_ENDPOINT, USERINFO_ENDPOINT
 
 
 router = APIRouter(prefix="/auth-collections", tags=["App Client"])
-
-
-class AppUserSchema(BaseModel):
-    email: str
-    password: str
-    data: Optional[dict] = None
-    roles: Optional[list[str]] = []
-
-
-class AppUserUpdateSchema(BaseModel):
-    email: Optional[str] = None
-    password: Optional[str] = None
-    data: Optional[dict] = None
-    roles: Optional[list[str]] = []
-
-
-class AppUserResponse(BaseModel):
-    email: str
-    data: Optional[dict] = None
-    client_id: str
-    created_at: datetime
-    id: str
-    roles: Optional[list[str]] = []
-
-
-class AppTokenResponse(BaseModel):
-    access_token: str
 
 
 @router.post("/login")
@@ -221,7 +199,9 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
                 )
             except Exception as e:
                 print(f"Token fetch error: {e}")
-                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=invalid_authorization_code"
+                built_url = (
+                    f"{GOOGLE_COMPLETE_URL}?coco-error=invalid_authorization_code"
+                )
                 return RedirectResponse(built_url)
 
             # Get user info from Google
@@ -242,7 +222,11 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
 
             # Check if user exists
             try:
-                existing_user = db.query(AppUser).filter(AppUser.email == email,AppUser.client_id== project_id).first()
+                existing_user = (
+                    db.query(AppUser)
+                    .filter(AppUser.email == email, AppUser.client_id == project_id)
+                    .first()
+                )
 
                 if existing_user:
                     # User exists - check if they used OAuth before
