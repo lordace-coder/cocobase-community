@@ -16,6 +16,7 @@ from app.api import (
 )
 
 from app.api.collections import collections
+from app.cron import cron
 from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
 from app.core.database import engine
@@ -74,6 +75,7 @@ app.include_router(payments.router)
 app.include_router(coco_hooks.router)
 app.include_router(collaborations.router)
 app.include_router(storage.router)
+app.include_router(cron.router)
 # Add middleware
 
 

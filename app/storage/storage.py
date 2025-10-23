@@ -6,6 +6,7 @@ import os
 from typing import Dict
 import io
 
+from app.models.pricing import get_current_plan
 from app.services.notification import send_notification_to_project_users
 
 
@@ -15,7 +16,7 @@ B2_APPLICATION_KEY = os.getenv("BACKBLAZE_APPLICATION_KEY")
 B2_ENDPOINT = os.getenv("BUCKET_ENDPOINT")
 B2_BUCKET = os.getenv("BUCKET_NAME")
 # Storage limit per project (50MB in bytes)
-STORAGE_LIMIT_PER_PROJECT = 50 * 1024 * 1024  # 50MB
+
 PUBLIC_BASE_URL = f"https://f005.backblazeb2.com/file/{B2_BUCKET}/"
 
 # Initialize B2 client
@@ -44,13 +45,14 @@ def get_project_usage(project_id: str) -> int:
         return 0
 
 
-def check_storage_limit(project_id: str, file_size: int):
+def check_storage_limit(project_id: str, file_size: int,db):
     """Check if uploading a file would exceed storage limit"""
+    STORAGE_LIMIT_PER_PROJECT = get_current_plan(db=db,project=project_id).max_storage_mb
     current_usage = get_project_usage(project_id)
     if current_usage + file_size > STORAGE_LIMIT_PER_PROJECT:
         send_notification_to_project_users(
             project_id,
-            "You have reached the storage limit for your current plan, kindly urchae a higher plan and try again.",
+            "You have reached the storage limit for your current plan, kindly purchase a higher plan and try again.",
         )
         raise HTTPException(
             status_code=413,

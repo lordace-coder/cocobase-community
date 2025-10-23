@@ -1,15 +1,20 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from app.core.database import get_db
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_app_user, get_project
 from app.models.app_client import Project
+from app.models.integrations import ProjectIntegration
+from app.models.pricing import get_current_plan
 from app.models.user import User
 from app.models.app_client import AppUser
+from app.services.email import notify_limit_reached, notify_limit_warning
 from app.services.google_login_helper import generate_oauth_url
+from app.services.integrations import IntegrationService
 from app.services.jwt import create_app_user_token, decode_app_user_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from app.schemas.auth_collection import (
@@ -53,10 +58,60 @@ def user_login(
 @router.post("/signup")
 def create_new_user(
     payload: AppUserSchema,
+    bg: BackgroundTasks,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
 ) -> AppTokenResponse:
     project = proj[0]
+    # check if limit has been reached
+    plan = get_current_plan(project, db)
+
+    # Check if user limit has been reached
+    # max_users = 0 or None means unlimited users
+    if plan.max_users is not None and plan.max_users > 0:
+        current_user_count = (
+            db.query(func.count(AppUser.id))
+            .filter(AppUser.client_id == project.id)
+            .scalar()
+        )
+
+        # Hard limit - deactivate project
+        if current_user_count >= plan.max_users:
+            project.is_active = False
+            db.commit()
+
+            # Notify user in background
+            bg.add_task(notify_limit_reached, user, project, "users", plan.max_users)
+
+            raise HTTPException(
+                status_code=403,
+                detail=f"User limit reached ({plan.max_users}). Project has been deactivated. Please upgrade your plan.",
+            )
+
+        # Soft limit - warning at 80% and 90%
+        usage_percentage = (current_user_count / plan.max_users) * 100
+
+        if usage_percentage >= 90:
+            bg.add_task(
+                notify_limit_warning,
+                user,
+                project,
+                "users",
+                current_user_count,
+                plan.max_users,
+                "critical",  # 90%+ is critical
+            )
+        elif usage_percentage >= 80:
+            bg.add_task(
+                notify_limit_warning,
+                user,
+                project,
+                "users",
+                current_user_count,
+                plan.max_users,
+                "warning",  # 80-89% is warning
+            )
+
     if (
         db.query(AppUser)
         .filter(AppUser.client_id == project.id, AppUser.email == payload.email)
@@ -130,18 +185,35 @@ def update_current_user_details(
 @router.get("/login-google")
 def login_with_google(
     proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
 ):
     project = proj[0]
 
+    # get integration settings
+    integration = IntegrationService(db)
+    project_integration: ProjectIntegration = integration.get_project_integration(
+        project.id,
+        "046deb41-47b3-403d-aee8-b80ccb80a87e",
+    )
+
+    if not project_integration or not project_integration.is_enabled:
+        raise HTTPException(
+            400, "Google OAuth integration is not enabled for this project"
+        )
+
+    config = dict(project_integration.config)
     # get required settings from project config
-    config = dict(project.configs)
     GOOGLE_CLIENT_ID = config.get("GOOGLE_CLIENT_ID")
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(
             400, "You need to add GOOGLE_CLIENT_ID key to your project config"
         )
 
-    redirect_url = config.get("GOOGLE_REDIRECT_URL")
+    redirect_url = (
+        config.get("GOOGLE_REDIRECT_URL")
+        or "https://cocobase.pxxl.click/auth-collections/auth-google-redirect/"
+        + project.id
+    )
     if not redirect_url:
         raise HTTPException(
             400, "You need to set the GOOGLE_REDIRECT_URL key in your project config"
@@ -156,8 +228,19 @@ def login_with_google(
 async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).get(project_id)
 
-    # GET PROJECT CONFIG FIRST
-    config = dict(project.configs)
+    # get integration settings
+    integration = IntegrationService(db)
+    project_integration: ProjectIntegration = integration.get_project_integration(
+        project.id,
+        "046deb41-47b3-403d-aee8-b80ccb80a87e",
+    )
+
+    if not project_integration or not project_integration.is_enabled:
+        raise HTTPException(
+            400, "Google OAuth integration is not enabled for this project"
+        )
+
+    config = dict(project_integration.config)
 
     GOOGLE_CLIENT_ID = config.get("GOOGLE_CLIENT_ID")
     if not GOOGLE_CLIENT_ID:
@@ -166,7 +249,11 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
         )
 
     # GET REDIRECT URL
-    redirect_url = config.get("GOOGLE_REDIRECT_URL")
+    redirect_url = (
+        config.get("GOOGLE_REDIRECT_URL")
+        or "https://cocobase.pxxl.click/auth-collections/auth-google-redirect/"
+        + project_id
+    )
     if not redirect_url:
         raise HTTPException(
             400, "You need to set the GOOGLE_REDIRECT_URL key in your project config"

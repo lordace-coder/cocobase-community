@@ -178,11 +178,12 @@ class ProjectSubscription(Base):
         return f"{self.plan.name} plan for {self.project.name}"
 
 
-def get_current_plan(project: Project, db: Session) -> PricingPlan:
+def get_current_plan(project: Project | str, db: Session) -> PricingPlan:
+    proj = project.id if isinstance(project, Project) else project
     active_sub = (
         db.query(ProjectSubscription)
         .filter(
-            ProjectSubscription.project_id == project.id,
+            ProjectSubscription.project_id == proj,
             ProjectSubscription.is_active == True,
         )
         .order_by(ProjectSubscription.start_date.desc())
@@ -195,17 +196,16 @@ def get_current_plan(project: Project, db: Session) -> PricingPlan:
     )
 
 
-
 class ApiUsageCounter(Base):
     __tablename__ = "api_usage_counters"
-    
+
     id = Column(Integer, primary_key=True)
     project_id = Column(String, nullable=False, index=True)
     month = Column(String(7), nullable=False)  # Format: "2025-10"
     request_count = Column(Integer, default=0, nullable=False)
-    last_synced_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    __table_args__ = (
-        Index('idx_project_month', 'project_id', 'month', unique=True),
+    last_synced_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("idx_project_month", "project_id", "month", unique=True),)

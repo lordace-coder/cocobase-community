@@ -1,15 +1,9 @@
-import secrets
-import bcrypt
-import requests
-
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models.user import User
-
-from app.services.redis_worker import get_redis_instance
 import redis
 from typing import Optional
 from app.services.redis_worker import get_redis_instance
@@ -19,6 +13,7 @@ from app.models.pricing import ApiUsageCounter, get_current_plan
 from app.models.user import User
 from app.services.email import notify_limit_reached, notify_limit_warning
 from sqlalchemy.orm import Session
+
 
 # Sync to database every N requests (configurable)
 SYNC_THRESHOLD = 100  # Sync to DB every 100 requests

@@ -12,13 +12,10 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy import cast, Integer, String, or_, and_, func
 from sqlalchemy.orm import Session, joinedload
-from fastapi.encoders import jsonable_encoder
-from fastapi_cache.decorator import cache
 from fastapi_cache import FastAPICache
 from .utilities import *
 from app.core.database import get_db
-from app.core.dependencies import get_app_user, get_project
-from app.core.middleware import track_api_call
+from app.core.dependencies import get_app_user, require_api_access
 from app.core.permissions import can_access_collection
 from app.models.app_client import Project
 from app.models.user import User
@@ -32,7 +29,6 @@ from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 router = APIRouter(
     prefix="/collections",
     tags=["Collections"],
-    dependencies=[Depends(get_project), Depends(track_api_call)],
 )
 
 
@@ -45,7 +41,7 @@ router = APIRouter(
 def create_collection(
     payload: CollectionCreateSchema,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
 ):
     """
     Create a new collection.
@@ -87,7 +83,7 @@ def update_collection(
     payload: CollectionUpdateSchema,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
 ):
     """
     Update a collection.
@@ -134,7 +130,7 @@ def delete_collection(
     collection_id: str,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
 ):
     """
     Delete a collection.
@@ -173,7 +169,7 @@ def create_new_document(
     bg: BackgroundTasks,
     collection: str,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     """
@@ -246,7 +242,7 @@ async def list_documents(
     id: str,
     request: Request,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     sort: Optional[str] = Query(None, description="Field to sort by"),
@@ -379,7 +375,7 @@ async def list_documents(
 async def get_document(
     id: str,
     document_id: str,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
@@ -422,7 +418,7 @@ def edit_document(
     document_id: str,
     payload: DocumentUpdateSchema,
     bg: BackgroundTasks,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
@@ -482,7 +478,7 @@ def delete_document(
     id: str,
     document_id: str,
     bg: BackgroundTasks,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ):
@@ -528,7 +524,7 @@ def delete_document(
 async def upload_file_to_project(
     file: UploadFile,
     directory: Optional[str] = None,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
 ):
     """
     Upload a file to project storage.
@@ -545,7 +541,7 @@ async def upload_file_to_project(
         # Read file content
         file_content = await file.read()
         file_size = len(file_content)
-
+        
         # Check storage limit
         check_storage_limit(proj[0].id, file_size)
 
@@ -586,7 +582,7 @@ def batch_create_documents(
     id: str,
     payload: BatchCreateRequest,
     bg: BackgroundTasks,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> list[DocumentSchema]:
@@ -667,7 +663,7 @@ def batch_delete_documents(
     id: str,
     payload: BatchDeleteRequest,
     bg: BackgroundTasks,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ):
@@ -717,7 +713,7 @@ def batch_update_documents(
     id: str,
     payload: BatchUpdateRequest,
     bg: BackgroundTasks,
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ):
@@ -776,7 +772,7 @@ async def count_documents(
     id: str,
     request: Request,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ):
     """
@@ -831,7 +827,7 @@ async def aggregate_documents(
         "count", regex="^(count|sum|avg|min|max)$", description="Aggregation operation"
     ),
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ):
     """
@@ -934,7 +930,7 @@ async def group_by_field(
         None, description="Field to count (default: document count)"
     ),
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ):
     """
@@ -1017,7 +1013,7 @@ async def group_by_field(
 async def get_collection_schema(
     id: str,
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ):
     """
@@ -1112,7 +1108,7 @@ async def export_collection(
     request: Request,
     format: str = Query("json", regex="^(json|csv)$"),
     db: Session = Depends(get_db),
-    proj: tuple[Project, User] = Depends(get_project),
+    proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ):
     """

@@ -78,6 +78,24 @@ async def send_subscription_email(
     )
 
 
+async def send_message_email(
+    to_email,
+    user_name,
+    message,
+    title,
+):
+    await send_email(
+        to=to_email,
+        subject=title,
+        context={
+            "user_name": user_name,
+            "message": message,
+            "title": title,
+        },
+        template="1fe572fb-269c-4ac4-84fd-db3b274883a7",
+    )
+
+
 # Notification function stubs (implement your logic)
 def notify_limit_reached(user: User, project: Project, resource_type: str, limit: int):
     """
