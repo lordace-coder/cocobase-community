@@ -5,6 +5,7 @@ from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
     integrations,
+    migrater,
     user,
     coco_hooks,
     project,
@@ -76,6 +77,7 @@ app.include_router(coco_hooks.router)
 app.include_router(collaborations.router)
 app.include_router(storage.router)
 app.include_router(cron.router)
+app.include_router(migrater.router)
 # Add middleware
 
 
