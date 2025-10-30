@@ -224,7 +224,7 @@ class ProjectDataCache:
 project_data_cache = ProjectDataCache(maxsize=5000, ttl=60)
 
 
-def get_project(
+async def get_project(
     request: Request,
     bg: BackgroundTasks,
     x_api_key: str = Header(...),
@@ -265,8 +265,10 @@ def get_project(
                     detail="Request origin not allowed for this project",
                 )
 
+            print("accessed proj")
+
             # Check and increment API usage
-            check_and_increment_api_usage(project, db, bg, user)
+            await check_and_increment_api_usage(project, db, bg, user)
             return project, user
 
     # Cache miss or stale - query with eager loading
@@ -300,8 +302,8 @@ def get_project(
     user = project.owner
 
     # Check and increment API usage
-    check_and_increment_api_usage(project, db, bg, user)
-
+    await check_and_increment_api_usage(project, db, bg, user)
+    print("accessed proj")
     # OPTIMIZATION: Cache lightweight data (not full ORM objects)
     project_data_cache.set(
         x_api_key,

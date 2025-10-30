@@ -1,8 +1,11 @@
-from typing import Any
+from collections import defaultdict
+from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from fastapi_cache import FastAPICache
 from sqlalchemy import cast, Integer, String, or_, and_, func
 from sqlalchemy.orm import Session, joinedload
+
+from app.models.app_client import AppUser
 
 from app.models.collections import Collection, Document
 
@@ -72,7 +75,15 @@ def get_collection_by_id_or_name(
     )
 
     if not collection:
-        raise HTTPException(404, "Collection not found")
+        # Create the collection (use identifier as the name) and persist it
+        collection = Collection(name=collection_identifier, project_id=project_id)
+        db.add(collection)
+        try:
+            db.commit()
+            db.refresh(collection)
+        except Exception:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to create collection")
 
     return collection
 
@@ -315,9 +326,11 @@ def extract_field_and_operator(field_with_op: str) -> tuple[str, str]:
     Extract field name and operator from a field expression.
 
     FIXED: Better detection to avoid false positives with underscores in field names.
+    Supports both single underscore (_op) and double underscore (__op) patterns.
 
     Examples:
         "age_gte" → ("age", "gte")
+        "email__contains" → ("email", "contains")  # Double underscore
         "user_id" → ("user_id", "eq")  # NOT ("user", "id")
         "first_name_contains" → ("first_name", "contains")
         "status" → ("status", "eq")
@@ -328,7 +341,13 @@ def extract_field_and_operator(field_with_op: str) -> tuple[str, str]:
     if "_" not in field_with_op:
         return field_with_op, "eq"
 
-    # Try splitting from the right and check if it's a valid operator
+    # First, try double underscore pattern (__operator)
+    if "__" in field_with_op:
+        parts = field_with_op.rsplit("__", 1)
+        if len(parts) == 2 and parts[1] in comparison_map:
+            return parts[0], parts[1]
+
+    # Fall back to single underscore pattern (_operator)
     parts = field_with_op.rsplit("_", 1)
 
     if len(parts) == 2 and parts[1] in comparison_map:
@@ -346,3 +365,705 @@ async def invalidate_collection_cache(collection_id: str):
         await FastAPICache.clear(namespace=f"collection:{collection_id}")
     except Exception:
         pass  # Cache invalidation shouldn't break the app
+
+
+class AutoRelationshipResolver:
+    """
+    Automatically resolve relationships for both Users and Collection Documents.
+    """
+
+    # Reserved collection names that map to actual models
+    SYSTEM_COLLECTIONS = {
+        "users": AppUser,
+        "app_users": AppUser,
+        "appusers": AppUser,
+    }
+
+    def __init__(self, db: Session):
+        self.db = db
+        self._collection_cache: Dict[str, Collection] = {}
+        self._system_model_cache: Dict[str, Any] = {}
+
+    def query_with_relationships(
+        self,
+        collection: Collection,
+        query_params: dict,
+        populate: Optional[List[str]] = None,
+        select: Optional[List[str]] = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Enhanced query that supports relationships."""
+        # Build base query with your existing filter logic
+        base_query = self.db.query(Document).filter(
+            Document.collection_id == collection.id
+        )
+
+        # Separate relationship filters from regular filters
+        regular_filters = {}
+        relationship_filters = {}
+
+        # Reserved params that should not be treated as filters
+        reserved_params = {"limit", "offset", "sort", "order", "populate", "select"}
+
+        for key, value in query_params.items():
+            if key in reserved_params:
+                continue
+            elif "." in key and not key.startswith("["):
+                # Relationship filter: author.role=admin, user.email=test@test.com
+                relationship_filters[key] = value
+            else:
+                regular_filters[key] = value
+
+        # Apply regular filters using your existing logic
+        if regular_filters:
+            base_query = build_query_filters(regular_filters, base_query)
+
+        # Apply relationship filters (new)
+        if relationship_filters:
+            base_query = self._apply_relationship_filters(
+                base_query, relationship_filters, collection
+            )
+
+        # Get total count
+        total = base_query.count()
+
+        # Apply sorting
+        sort_field = query_params.get("sort", "created_at")
+        sort_order = query_params.get("order", "desc")
+        base_query = self._apply_sorting(base_query, sort_field, sort_order)
+
+        # Apply pagination
+        base_query = base_query.offset(offset).limit(limit)
+
+        # Execute query
+        documents = base_query.all()
+
+        # Transform results with relationship population
+        results = []
+        for doc in documents:
+            result = self._transform_document(
+                doc, populate, select, collection.project_id
+            )
+            results.append(result)
+
+        return {
+            "data": results,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total,
+        }
+
+    def _is_system_collection(self, collection_name: str) -> bool:
+        """Check if this is a system collection (like users)."""
+        return collection_name.lower() in self.SYSTEM_COLLECTIONS
+
+    def _get_system_model(self, collection_name: str):
+        """Get the system model class for a collection name."""
+        return self.SYSTEM_COLLECTIONS.get(collection_name.lower())
+
+    def _apply_relationship_filters(
+        self,
+        query,
+        filters: Dict[str, str],
+        collection: Collection,
+    ):
+        """
+        Apply filters on related collections or users with operator support.
+
+        Examples:
+        - author.role=admin (exact match)
+        - author.email__contains=john (contains operator)
+        - author.name__startswith=John (startswith operator)
+        - category.name=tech (if category_id points to categories collection)
+        - user.email=test@test.com (if user_id points to AppUser model)
+        """
+        print(f"\nDEBUG _apply_relationship_filters: Received {len(filters)} filters")
+        for k, v in filters.items():
+            print(f"  DEBUG: Filter key='{k}', value='{v}'")
+
+        for path, value in filters.items():
+            parts = path.split(".", 1)
+            rel_field = parts[0]
+            nested_field_with_op = parts[1]
+
+            print(
+                f"  DEBUG: rel_field='{rel_field}', nested_field_with_op='{nested_field_with_op}'"
+            )
+
+            # Extract operator from nested field (e.g., email__contains -> email, contains)
+            nested_field, operator = extract_field_and_operator(nested_field_with_op)
+
+            print(
+                f"  DEBUG: Extracted nested_field='{nested_field}', operator='{operator}'"
+            )
+
+            # Detect relationship type
+            id_field = f"{rel_field}_id"
+            ids_field = f"{rel_field}_ids"
+
+            # Determine target (system model or collection)
+            target_collection_name = self._pluralize(rel_field)
+
+            if self._is_system_collection(target_collection_name):
+                # Filter by AppUser model
+                query = self._apply_user_filter(
+                    query, id_field, ids_field, nested_field, value, operator
+                )
+            else:
+                # Filter by collection document
+                query = self._apply_collection_filter(
+                    query,
+                    id_field,
+                    ids_field,
+                    target_collection_name,
+                    nested_field,
+                    value,
+                    collection.project_id,
+                    operator,
+                )
+
+        return query
+
+    def _apply_user_filter(
+        self,
+        query,
+        id_field: str,
+        ids_field: str,
+        nested_field: str,
+        value: str,
+        operator: str = "eq",
+    ):
+        """Apply filter on AppUser model with operator support."""
+        # Build subquery for matching users
+        user_field = getattr(AppUser, nested_field, None)
+
+        if user_field is None:
+            # Try JSONB data field if it exists
+            if hasattr(AppUser, "data"):
+                # Use parse_filter_expression for operator support
+                json_col = AppUser.data[nested_field]
+                comp_fn = comparison_map.get(operator)
+
+                if comp_fn:
+                    # Type conversion for numeric operators
+                    if operator in {"lte", "gte", "lt", "gt"}:
+                        try:
+                            typed_value = int(value)
+                        except ValueError:
+                            try:
+                                typed_value = float(value)
+                            except ValueError:
+                                typed_value = value
+                    else:
+                        typed_value = value
+
+                    filter_expr = comp_fn(json_col, typed_value)
+                    subquery = self.db.query(AppUser.id).filter(filter_expr)
+                else:
+                    # Fallback to exact match
+                    subquery = self.db.query(AppUser.id).filter(
+                        AppUser.data[nested_field].astext == str(value)
+                    )
+            else:
+                print(f"WARNING: Field '{nested_field}' not found in AppUser model")
+                return query
+        else:
+            # Direct column filter with operator support
+            if operator == "eq":
+                filter_cond = user_field == value
+            elif operator == "ne":
+                filter_cond = user_field != value
+            elif operator == "contains":
+                filter_cond = user_field.ilike(f"%{value}%")
+            elif operator == "startswith":
+                filter_cond = user_field.ilike(f"{value}%")
+            elif operator == "endswith":
+                filter_cond = user_field.ilike(f"%{value}")
+            elif operator == "in":
+                filter_cond = user_field.in_([v.strip() for v in value.split(",")])
+            elif operator == "notin":
+                filter_cond = ~user_field.in_([v.strip() for v in value.split(",")])
+            else:
+                # Fallback to exact match
+                filter_cond = user_field == value
+
+            subquery = self.db.query(AppUser.id).filter(filter_cond)
+
+        # Apply to main query
+        query = query.filter(
+            or_(
+                Document.data[id_field].astext.in_(subquery),
+                Document.data[ids_field].op("?|")(func.array(subquery.subquery())),
+            )
+        )
+
+        return query
+
+    def _apply_collection_filter(
+        self,
+        query,
+        id_field: str,
+        ids_field: str,
+        target_collection_name: str,
+        nested_field: str,
+        value: str,
+        project_id: str,
+        operator: str = "eq",
+    ):
+        """Apply filter on collection document with operator support."""
+        target_collection = self._get_collection_by_name(
+            target_collection_name, project_id
+        )
+
+        if not target_collection:
+            print(f"WARNING: Collection '{target_collection_name}' not found")
+            return query
+
+        # Build filter expression with operator support
+        json_col = Document.data[nested_field]
+        comp_fn = comparison_map.get(operator)
+
+        if comp_fn:
+            # Type conversion for numeric operators
+            if operator in {"lte", "gte", "lt", "gt"}:
+                try:
+                    typed_value = int(value)
+                except ValueError:
+                    try:
+                        typed_value = float(value)
+                    except ValueError:
+                        typed_value = value
+            else:
+                typed_value = value
+
+            filter_expr = comp_fn(json_col, typed_value)
+        else:
+            # Fallback to exact match
+            filter_expr = json_col.astext == str(value)
+
+        # Build subquery
+        subquery = self.db.query(Document.id).filter(
+            and_(
+                Document.collection_id == target_collection.id,
+                filter_expr,
+            )
+        )
+
+        # Apply to main query
+        query = query.filter(
+            or_(
+                Document.data[id_field].astext.in_(subquery),
+                Document.data[ids_field].op("?|")(func.array(subquery.subquery())),
+            )
+        )
+
+        return query
+
+    def _transform_document(
+        self,
+        doc: Document,
+        populate: Optional[List[str]],
+        select: Optional[List[str]],
+        project_id: str,
+    ) -> Dict[str, Any]:
+        """Transform document with relationship population."""
+        result = {
+            "id": doc.id,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        }
+
+        # Add all data fields
+        result.update(doc.data)  # Populate relationships
+        if populate:
+            result = self._populate_relationships(result, populate, project_id)
+
+        # Select specific fields
+        if select:
+            result = self._select_fields(result, select)
+
+        return result
+
+    def _populate_relationships(
+        self, doc: Dict[str, Any], populate: List[str], project_id: str
+    ) -> Dict[str, Any]:
+        """Auto-populate relationships (users or collections)."""
+        populate_map = self._parse_populate_paths(populate)
+
+        for field_path, nested_populates in populate_map.items():
+            # Handle nested paths
+            if "." in field_path:
+                parts = field_path.split(".", 1)
+                parent_field = parts[0]
+                nested_path = parts[1]
+
+                # Populate parent first
+                if parent_field not in populate_map or not doc.get(parent_field):
+                    doc = self._populate_single_field(doc, parent_field, project_id, [])
+
+                # Then populate nested
+                if parent_field in doc:
+                    if isinstance(doc[parent_field], list):
+                        doc[parent_field] = [
+                            self._populate_relationships(
+                                item, [nested_path], project_id
+                            )
+                            for item in doc[parent_field]
+                            if isinstance(item, dict)
+                        ]
+                    elif isinstance(doc[parent_field], dict):
+                        doc[parent_field] = self._populate_relationships(
+                            doc[parent_field], [nested_path], project_id
+                        )
+            else:
+                # Simple field population
+                doc = self._populate_single_field(
+                    doc, field_path, project_id, nested_populates
+                )
+
+        return doc
+
+    def _populate_single_field(
+        self,
+        doc: Dict[str, Any],
+        field_name: str,
+        project_id: str,
+        nested_populates: List[str],
+    ) -> Dict[str, Any]:
+        """
+        Populate a single relationship field.
+
+        Detects if it should fetch from AppUser or Collection.
+        """
+        id_field = f"{field_name}_id"
+        ids_field = f"{field_name}_ids"
+
+        # Determine target
+        target_name = self._pluralize(field_name)
+        is_user_relation = self._is_system_collection(target_name)
+
+        # Case 1: belongs_to (field_id exists)
+        if id_field in doc and doc[id_field]:
+            if is_user_relation:
+                related = self._fetch_user(doc[id_field], nested_populates, project_id)
+            else:
+                related = self._fetch_related_document(
+                    target_name, project_id, doc[id_field], nested_populates
+                )
+
+            if related:
+                doc[field_name] = related
+
+        # Case 2: has_many (field_ids exists)
+        elif ids_field in doc and doc[ids_field]:
+            if isinstance(doc[ids_field], list):
+                if is_user_relation:
+                    related = self._fetch_users(
+                        doc[ids_field], nested_populates, project_id
+                    )
+                else:
+                    related = self._fetch_related_documents(
+                        target_name, project_id, doc[ids_field], nested_populates
+                    )
+
+                doc[field_name] = related
+
+        # Case 3: Reverse relationship
+        else:
+            if is_user_relation:
+                # Don't support reverse user relationships
+                pass
+            else:
+                singular = self._singularize(field_name)
+                foreign_key = f"{singular}_id"
+                related = self._fetch_reverse_related(
+                    field_name, project_id, foreign_key, doc["id"], nested_populates
+                )
+                if related:
+                    doc[field_name] = related
+
+        return doc
+
+    def _fetch_user(
+        self, user_id: str, nested_populates: List[str], project_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a single AppUser."""
+        user = self.db.query(AppUser).filter(AppUser.id == user_id).first()
+
+        if not user:
+            return None
+
+        # Build user data (exclude sensitive fields)
+        result = {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        }
+
+        # Add data field if exists
+        if hasattr(user, "data") and user.data:
+            result.update(user.data)
+
+        # Add roles if exists
+        if hasattr(user, "roles") and user.roles:
+            result["roles"] = user.roles
+
+        # DON'T include password!
+        result.pop("password", None)
+
+        # Recursively populate nested (if user has relationships)
+        if nested_populates and hasattr(user, "data") and user.data:
+            result = self._populate_relationships(result, nested_populates, project_id)
+
+        return result
+
+    def _fetch_users(
+        self, user_ids: List[str], nested_populates: List[str], project_id: str
+    ) -> List[Dict[str, Any]]:
+        """Fetch multiple AppUsers (batch)."""
+        users = self.db.query(AppUser).filter(AppUser.id.in_(user_ids)).all()
+
+        results = []
+        for user in users:
+            result = {
+                "id": user.id,
+                "email": user.email,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+            }
+
+            if hasattr(user, "data") and user.data:
+                result.update(user.data)
+
+            if hasattr(user, "roles") and user.roles:
+                result["roles"] = user.roles
+
+            result.pop("password", None)
+
+            if nested_populates and hasattr(user, "data") and user.data:
+                result = self._populate_relationships(
+                    result, nested_populates, project_id
+                )
+
+            results.append(result)
+
+        return results
+
+    def _fetch_related_document(
+        self,
+        collection_name: str,
+        project_id: str,
+        doc_id: str,
+        nested_populates: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a single related document from collection."""
+        collection = self._get_collection_by_name(collection_name, project_id)
+        if not collection:
+            return None
+
+        doc = (
+            self.db.query(Document)
+            .filter(Document.collection_id == collection.id, Document.id == doc_id)
+            .first()
+        )
+
+        if not doc:
+            return None
+
+        result = {"id": doc.id, **doc.data}
+
+        if nested_populates:
+            result = self._populate_relationships(result, nested_populates, project_id)
+
+        return result
+
+    def _fetch_related_documents(
+        self,
+        collection_name: str,
+        project_id: str,
+        doc_ids: List[str],
+        nested_populates: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Fetch multiple related documents (batch)."""
+        collection = self._get_collection_by_name(collection_name, project_id)
+        if not collection:
+            return []
+
+        docs = (
+            self.db.query(Document)
+            .filter(Document.collection_id == collection.id, Document.id.in_(doc_ids))
+            .all()
+        )
+
+        results = []
+        for doc in docs:
+            result = {"id": doc.id, **doc.data}
+            if nested_populates:
+                result = self._populate_relationships(
+                    result, nested_populates, project_id
+                )
+            results.append(result)
+
+        return results
+
+    def _fetch_reverse_related(
+        self,
+        collection_name: str,
+        project_id: str,
+        foreign_key: str,
+        reference_id: str,
+        nested_populates: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Fetch documents that reference this document."""
+        collection = self._get_collection_by_name(collection_name, project_id)
+        if not collection:
+            return []
+
+        docs = (
+            self.db.query(Document)
+            .filter(
+                Document.collection_id == collection.id,
+                Document.data[foreign_key].astext == reference_id,
+            )
+            .all()
+        )
+
+        results = []
+        for doc in docs:
+            result = {"id": doc.id, **doc.data}
+            if nested_populates:
+                result = self._populate_relationships(
+                    result, nested_populates, project_id
+                )
+            results.append(result)
+
+        return results
+
+    # ... (keep all other helper methods from previous implementation)
+
+    def _parse_populate_paths(self, populate: List[str]) -> Dict[str, List[str]]:
+        """Parse populate paths."""
+        result = defaultdict(list)
+
+        for path in populate:
+            if "." in path:
+                parts = path.split(".", 1)
+                parent = parts[0]
+                nested = parts[1]
+                result[parent].append(nested)
+            else:
+                if path not in result:
+                    result[path] = []
+
+        return dict(result)
+
+    def _select_fields(self, doc: Dict[str, Any], select: List[str]) -> Dict[str, Any]:
+        """Select only specified fields."""
+        result = {"id": doc["id"]}
+
+        for field_path in select:
+            parts = field_path.split(".")
+            value = doc
+            valid = True
+
+            for part in parts:
+                if isinstance(value, dict) and part in value:
+                    value = value[part]
+                else:
+                    valid = False
+                    break
+
+            if valid:
+                self._set_nested_value(result, parts, value)
+
+        return result
+
+    def _set_nested_value(self, obj: Dict, path: List[str], value: Any):
+        """Set nested value."""
+        for key in path[:-1]:
+            if key not in obj:
+                obj[key] = {}
+            obj = obj[key]
+        obj[path[-1]] = value
+
+    def _apply_sorting(self, query, sort_field: str, sort_order: str):
+        """Apply sorting."""
+        if sort_field in ["created_at", "updated_at", "id"]:
+            col = getattr(Document, sort_field)
+            return query.order_by(col.desc() if sort_order == "desc" else col.asc())
+        else:
+            if sort_order == "desc":
+                return query.order_by(Document.data[sort_field].desc())
+            else:
+                return query.order_by(Document.data[sort_field].asc())
+
+    def _get_collection_by_name(
+        self, name: str, project_id: str
+    ) -> Optional[Collection]:
+        """Get collection with caching - tries both singular and plural forms."""
+        cache_key = f"{project_id}:{name}"
+
+        if cache_key in self._collection_cache:
+            return self._collection_cache[cache_key]
+
+        # Try exact name first
+        collection = (
+            self.db.query(Collection)
+            .filter(Collection.name == name, Collection.project_id == project_id)
+            .first()
+        )
+
+        # If not found, try singular form (remove 's')
+        if not collection and name.endswith("s"):
+            singular_name = self._singularize(name)
+            collection = (
+                self.db.query(Collection)
+                .filter(
+                    Collection.name == singular_name,
+                    Collection.project_id == project_id,
+                )
+                .first()
+            )
+            print(
+                f"DEBUG: Tried singular form '{singular_name}' - {'Found' if collection else 'Not found'}"
+            )
+
+        # If still not found, try plural form (add 's')
+        if not collection and not name.endswith("s"):
+            plural_name = self._pluralize(name)
+            collection = (
+                self.db.query(Collection)
+                .filter(
+                    Collection.name == plural_name, Collection.project_id == project_id
+                )
+                .first()
+            )
+            print(
+                f"DEBUG: Tried plural form '{plural_name}' - {'Found' if collection else 'Not found'}"
+            )
+
+        if collection:
+            self._collection_cache[cache_key] = collection
+        else:
+            print(f"WARNING: Collection '{name}' not found in project {project_id}")
+
+        return collection
+
+    def _pluralize(self, word: str) -> str:
+        """Simple pluralization."""
+        if word.endswith("y"):
+            return word[:-1] + "ies"
+        elif word.endswith("s"):
+            return word + "es"
+        else:
+            return word + "s"
+
+    def _singularize(self, word: str) -> str:
+        """Simple singularization."""
+        if word.endswith("ies"):
+            return word[:-3] + "y"
+        elif word.endswith("ses"):
+            return word[:-2]
+        elif word.endswith("s"):
+            return word[:-1]
+        return word

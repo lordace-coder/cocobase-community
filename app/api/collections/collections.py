@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional, Any, List
 from fastapi import (
     APIRouter,
     Depends,
@@ -19,6 +19,7 @@ from app.core.dependencies import get_app_user, require_api_access
 from app.core.permissions import can_access_collection
 from app.models.app_client import Project
 from app.models.user import User
+from app.models.app_client import AppUser
 from app.models.collections import Document, Collection
 from app.schemas.collections import *
 from app.services.utils import handle_webhook_call
@@ -145,15 +146,18 @@ def delete_collection(
     # Verify collection exists first (for better error message)
     collection = get_collection_by_id_or_name(collection_id, project.id, db)
 
+    # Store the ID before deletion (to avoid detached instance error)
+    stored_collection_id = collection.id
+
     # Delete the collection
-    db.query(Collection).filter(Collection.id == collection.id).delete(
+    db.query(Collection).filter(Collection.id == stored_collection_id).delete(
         synchronize_session=False
     )
 
     db.commit()
 
     # Invalidate cache in background
-    bg.add_task(invalidate_collection_cache, collection.id)
+    bg.add_task(invalidate_collection_cache, stored_collection_id)
 
     return None
 
@@ -237,7 +241,7 @@ def create_new_document(
         raise HTTPException(500, f"Failed to create document: {str(e)}")
 
 
-@router.get("/{id}/documents", response_model=list[DocumentSchema])
+@router.get("/{id}/documents")
 async def list_documents(
     id: str,
     request: Request,
@@ -247,10 +251,18 @@ async def list_documents(
     offset: int = Query(0, ge=0),
     sort: Optional[str] = Query(None, description="Field to sort by"),
     order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
+    # NEW: Relationship parameters
+    populate: Optional[List[str]] = Query(
+        None,
+        description="Relationships to populate (e.g., 'author', 'tags', 'comments.user')",
+    ),
+    select: Optional[List[str]] = Query(
+        None, description="Fields to select (e.g., 'title', 'author.name')"
+    ),
     user: AppUser = Depends(get_app_user),
-) -> list[DocumentSchema]:
+):
     """
-    List documents in a collection with advanced filtering and boolean logic.
+    List documents in a collection with advanced filtering, boolean logic, and relationships.
 
     🚨 REMOVED @cache DECORATOR - Security Issue!
     - Documents are user-specific (permissions)
@@ -303,6 +315,33 @@ async def list_documents(
     - notin: value not in list
     - isnull: is null/not null (true/false)
 
+    RELATIONSHIP FEATURES (NEW!):
+    ============================
+
+    8. AUTO-POPULATE RELATIONSHIPS:
+       /documents?populate=author&populate=tags
+       → Automatically fetch related users/documents based on field names
+
+       Conventions:
+       - author_id → fetches from 'users' collection or AppUser model
+       - category_id → fetches from 'categories' collection
+       - tag_ids → fetches multiple from 'tags' collection
+
+    9. NESTED POPULATION:
+       /documents?populate=comments.user
+       → Populate comments AND each comment's user
+
+    10. FILTER BY RELATIONSHIP FIELDS:
+        /documents?author.role=admin&populate=author
+        → Filter posts where author's role is 'admin'
+
+        /documents?user.email=john@example.com&populate=user
+        → Filter by user's email (works with AppUser model)
+
+    11. SELECT SPECIFIC FIELDS:
+        /documents?select=title&select=author.name&populate=author
+        → Return only id, title, and author's name
+
     REAL-WORLD EXAMPLES:
     ===================
 
@@ -312,17 +351,20 @@ async def list_documents(
     # Find active users over 18 OR admins
     GET /collections/users/documents?status=active&[or]age_gte=18&[or]role=admin
 
-    # Find premium users OR verified users with age > 25
-    GET /collections/users/documents?[or:a]isPremium=true&[or:b]isVerified=true&[or:b]age_gte=25
+    # Find posts with their authors
+    GET /collections/posts/documents?populate=author&populate=category
 
-    # Search by name or email, only active users
-    GET /collections/users/documents?name__or__email_contains=john&status=active
+    # Find posts by admin authors
+    GET /collections/posts/documents?author.role=admin&populate=author
 
-    # Find users in multiple countries, sorted by age
-    GET /collections/users/documents?country_in=US,UK,CA&sort=age&order=asc
+    # Find comments with nested user data
+    GET /collections/comments/documents?populate=post&populate=user
 
-    # Find incomplete tasks assigned to user OR high priority
-    GET /collections/tasks/documents?status=incomplete&[or]assignedTo=user123&[or]priority=high
+    # Get only specific fields from posts and authors
+    GET /collections/posts/documents?select=title&select=author.name&populate=author
+
+    # Complex: Active posts by admins with tags
+    GET /collections/posts/documents?status=active&author.role=admin&populate=author&populate=tags
     """
     project = proj[0]
 
@@ -332,6 +374,44 @@ async def list_documents(
     # Verify permissions
     can_access_collection(collection, "read", user)
 
+    # Extract query params
+    query_params = dict(request.query_params)
+
+    # Check if relationships are requested
+    has_relationships = (
+        populate
+        or select
+        or any(
+            "." in k
+            and not k.startswith("[")
+            and k not in {"limit", "offset", "sort", "order"}
+            for k in query_params.keys()
+        )
+    )
+
+    if has_relationships:
+        # Use relationship resolver for complex queries
+        print(
+            f"DEBUG: Using relationship resolver (populate={populate}, select={select})"
+        )
+
+        resolver = AutoRelationshipResolver(db)
+        result = resolver.query_with_relationships(
+            collection=collection,
+            query_params=query_params,
+            populate=populate,
+            select=select,
+            limit=limit,
+            offset=offset,
+        )
+
+        # Return dict response directly (bypass DocumentSchema validation)
+        # since the structure is different with populated relationships
+        return result["data"]
+
+    # Otherwise, use your existing fast path for simple queries
+    print(f"DEBUG: Using standard query (no relationships)")
+
     # Base query with eager loading
     query = (
         db.query(Document)
@@ -339,12 +419,28 @@ async def list_documents(
         .filter(Document.collection_id == collection.id)
     )
 
+    # Remove populate and select from query_params before filtering
+    filtered_query_params = {
+        k: v
+        for k, v in query_params.items()
+        if k not in {"limit", "offset", "sort", "order", "populate", "select"}
+    }
+
     # Apply dynamic filters with boolean logic
-    query = build_query_filters(
-        dict(request.query_params),
-        query,
-        reserved_params={"id", "limit", "offset", "sort", "order"},
-    )
+    if filtered_query_params:
+        query = build_query_filters(
+            filtered_query_params,
+            query,
+            reserved_params={
+                "id",
+                "limit",
+                "offset",
+                "sort",
+                "order",
+                "populate",
+                "select",
+            },
+        )
 
     # Apply sorting
     if sort:
@@ -371,25 +467,36 @@ async def list_documents(
     return [DocumentSchema.model_validate(doc) for doc in results]
 
 
-@router.get("/{id}/documents/{document_id}", response_model=DocumentSchema)
+@router.get("/{id}/documents/{document_id}")
 async def get_document(
     id: str,
     document_id: str,
     proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
+    # NEW: Relationship parameters
+    populate: Optional[List[str]] = Query(
+        None, description="Relationships to populate"
+    ),
+    select: Optional[List[str]] = Query(None, description="Fields to select"),
     user: AppUser = Depends(get_app_user),
-) -> DocumentSchema:
+):
     """
-    Get a single document by ID.
+    Get a single document by ID with optional relationship population.
 
     🚨 REMOVED @cache DECORATOR - Security Issue!
     - User-specific permissions
     - Document data may change
 
+    Examples:
+    - GET /documents/123 (basic)
+    - GET /documents/123?populate=author&populate=tags (with relationships)
+    - GET /documents/123?populate=comments.user (nested)
+    - GET /documents/123?select=title&select=author.name&populate=author (specific fields)
+
     Optimizations:
     - ✅ Use helper function
     - ✅ Single query with eager loading
-    - ✅ Convert to Pydantic
+    - ✅ Support for relationships (NEW!)
     """
     project = proj[0]
 
@@ -409,6 +516,15 @@ async def get_document(
     if not document:
         raise HTTPException(404, "Document not found")
 
+    # Check if relationships are requested
+    if populate or select:
+        resolver = AutoRelationshipResolver(db)
+        result = resolver._transform_document(
+            document, populate, select, collection.project_id
+        )
+        return result
+
+    # Simple response
     return DocumentSchema.model_validate(document)
 
 
@@ -541,7 +657,7 @@ async def upload_file_to_project(
         # Read file content
         file_content = await file.read()
         file_size = len(file_content)
-        
+
         # Check storage limit
         check_storage_limit(proj[0].id, file_size)
 
@@ -577,7 +693,7 @@ class BatchCreateRequest(BaseModel):
     documents: list[dict]  # List of document data objects
 
 
-@router.post("/{id}/documents/batch-create", response_model=list[DocumentSchema])
+@router.post("/{id}/batch/documents/create", response_model=list[DocumentSchema])
 def batch_create_documents(
     id: str,
     payload: BatchCreateRequest,
@@ -658,7 +774,7 @@ def batch_create_documents(
         raise HTTPException(500, f"Failed to create documents: {str(e)}")
 
 
-@router.post("/{id}/documents/batch-delete")
+@router.post("/{id}/batch/documents/delete")
 def batch_delete_documents(
     id: str,
     payload: BatchDeleteRequest,
@@ -708,7 +824,7 @@ class BatchUpdateRequest(BaseModel):
     updates: dict[str, dict]  # {document_id: {data: {...}}}
 
 
-@router.post("/{id}/documents/batch-update")
+@router.post("/{id}/batch/documents/update")
 def batch_update_documents(
     id: str,
     payload: BatchUpdateRequest,
@@ -767,7 +883,7 @@ def batch_update_documents(
 # ============================================
 
 
-@router.get("/{id}/documents/count")
+@router.get("/{id}/query/documents/count")
 async def count_documents(
     id: str,
     request: Request,
@@ -783,6 +899,9 @@ async def count_documents(
     Example:
         GET /collections/users/documents/count?status=active&age_gte=18
         → Returns: {"count": 42}
+
+        GET /collections/posts/documents/count?author.role=admin
+        → Returns: {"count": 15} (counts posts by admin authors)
     """
     project = proj[0]
 
@@ -791,34 +910,65 @@ async def count_documents(
     # Verify permissions
     can_access_collection(collection, "read", user)
 
-    # Base query
-    query = db.query(func.count(Document.id)).filter(
-        Document.collection_id == collection.id
+    # Extract query params
+    query_params = dict(request.query_params)
+
+    # Check if this has relationship filters
+    has_relationship_filters = any(
+        "." in k and not k.startswith("[") for k in query_params.keys()
     )
 
-    # Apply filters (excluding pagination params)
-    filtered_params = {
-        k: v
-        for k, v in request.query_params.items()
-        if k not in {"limit", "offset", "sort", "order"}
-    }
+    if has_relationship_filters:
+        # Use relationship resolver for accurate count
+        resolver = AutoRelationshipResolver(db)
 
-    if filtered_params:
-        # We need to convert the count query to a regular query, apply filters, then count
-        doc_query = db.query(Document).filter(Document.collection_id == collection.id)
-        doc_query = build_query_filters(
-            filtered_params,
-            doc_query,
-            reserved_params={"id", "limit", "offset", "sort", "order"},
-        )
-        count = doc_query.count()
+        # Build query without pagination
+        base_query = db.query(Document).filter(Document.collection_id == collection.id)
+
+        # Separate relationship filters
+        relationship_filters = {
+            k: v for k, v in query_params.items() if "." in k and not k.startswith("[")
+        }
+        regular_filters = {
+            k: v
+            for k, v in query_params.items()
+            if not ("." in k and not k.startswith("["))
+        }
+
+        # Apply regular filters
+        if regular_filters:
+            base_query = build_query_filters(regular_filters, base_query)
+
+        # Apply relationship filters
+        if relationship_filters:
+            base_query = resolver._apply_relationship_filters(
+                base_query, relationship_filters, collection
+            )
+
+        count = base_query.count()
     else:
-        count = query.scalar()
+        # Standard count (faster)
+        doc_query = db.query(Document).filter(Document.collection_id == collection.id)
+
+        filtered_params = {
+            k: v
+            for k, v in query_params.items()
+            if k not in {"limit", "offset", "sort", "order"}
+        }
+
+        if filtered_params:
+            doc_query = build_query_filters(
+                filtered_params,
+                doc_query,
+                reserved_params={"id", "limit", "offset", "sort", "order"},
+            )
+
+        count = doc_query.count()
 
     return {"count": count}
 
 
-@router.get("/{id}/documents/aggregate")
+@router.get("/{id}/query/documents/aggregate", response_model=dict)
 async def aggregate_documents(
     id: str,
     request: Request,
@@ -846,9 +996,14 @@ async def aggregate_documents(
 
         GET /collections/users/documents/aggregate?field=age&operation=avg&status=active
         → Returns: {"field": "age", "operation": "avg", "result": 32.5}
+
+        GET /collections/posts/documents/aggregate?field=views&operation=sum&author.role=admin
+        → Returns: {"field": "views", "operation": "sum", "result": 50000}
     """
     project = proj[0]
-
+    print(
+        f"DEBUG: Aggregation request on collection {id} for field '{field}' with operation '{operation}'"
+    )
     collection = get_collection_by_id_or_name(id, project.id, db)
 
     # Verify permissions
@@ -857,27 +1012,61 @@ async def aggregate_documents(
     # Base query
     query = db.query(Document).filter(Document.collection_id == collection.id)
 
-    # Apply filters (excluding aggregation params)
+    # Extract query params
+    query_params = dict(request.query_params)
+
+    # Check for relationship filters
+    has_relationship_filters = any(
+        "." in k and not k.startswith("[")
+        for k, v in query_params.items()
+        if k not in {"field", "operation", "limit", "offset", "sort", "order"}
+    )
+
+    # Apply filters
     filtered_params = {
         k: v
-        for k, v in request.query_params.items()
+        for k, v in query_params.items()
         if k not in {"field", "operation", "limit", "offset", "sort", "order"}
     }
 
     if filtered_params:
-        query = build_query_filters(
-            filtered_params,
-            query,
-            reserved_params={
-                "id",
-                "field",
-                "operation",
-                "limit",
-                "offset",
-                "sort",
-                "order",
-            },
-        )
+        if has_relationship_filters:
+            # Use relationship resolver
+            resolver = AutoRelationshipResolver(db)
+
+            relationship_filters = {
+                k: v
+                for k, v in filtered_params.items()
+                if "." in k and not k.startswith("[")
+            }
+            regular_filters = {
+                k: v
+                for k, v in filtered_params.items()
+                if not ("." in k and not k.startswith("["))
+            }
+
+            if regular_filters:
+                query = build_query_filters(regular_filters, query)
+
+            if relationship_filters:
+                query = resolver._apply_relationship_filters(
+                    query, relationship_filters, collection
+                )
+        else:
+            # Standard filtering
+            query = build_query_filters(
+                filtered_params,
+                query,
+                reserved_params={
+                    "id",
+                    "field",
+                    "operation",
+                    "limit",
+                    "offset",
+                    "sort",
+                    "order",
+                },
+            )
 
     # Get the JSON field
     json_field = Document.data[field]
@@ -921,9 +1110,9 @@ async def aggregate_documents(
         )
 
 
-@router.get("/{id}/documents/group-by")
+@router.get("/{collection_id}/query/documents/group-by", response_model=List[dict])
 async def group_by_field(
-    id: str,
+    collection_id: str,
     request: Request,
     field: str = Query(..., description="Field to group by"),
     count_field: Optional[str] = Query(
@@ -949,10 +1138,16 @@ async def group_by_field(
             {"status": "completed", "count": 320},
             {"status": "pending", "count": 45}
           ]
+
+        GET /collections/posts/documents/group-by?field=category&author.role=admin
+        → Returns: [
+            {"category": "tech", "count": 45},
+            {"category": "business", "count": 32}
+          ] (grouped posts by admin authors only)
     """
     project = proj[0]
 
-    collection = get_collection_by_id_or_name(id, project.id, db)
+    collection = get_collection_by_id_or_name(collection_id, project.id, db)
 
     # Verify permissions
     can_access_collection(collection, "read", user)
@@ -960,27 +1155,61 @@ async def group_by_field(
     # Base query
     query = db.query(Document).filter(Document.collection_id == collection.id)
 
-    # Apply filters (excluding group-by params)
+    # Extract query params
+    query_params = dict(request.query_params)
+
+    # Check for relationship filters
+    has_relationship_filters = any(
+        "." in k and not k.startswith("[")
+        for k, v in query_params.items()
+        if k not in {"field", "count_field", "limit", "offset", "sort", "order"}
+    )
+
+    # Apply filters
     filtered_params = {
         k: v
-        for k, v in request.query_params.items()
+        for k, v in query_params.items()
         if k not in {"field", "count_field", "limit", "offset", "sort", "order"}
     }
 
     if filtered_params:
-        query = build_query_filters(
-            filtered_params,
-            query,
-            reserved_params={
-                "id",
-                "field",
-                "count_field",
-                "limit",
-                "offset",
-                "sort",
-                "order",
-            },
-        )
+        if has_relationship_filters:
+            # Use relationship resolver
+            resolver = AutoRelationshipResolver(db)
+
+            relationship_filters = {
+                k: v
+                for k, v in filtered_params.items()
+                if "." in k and not k.startswith("[")
+            }
+            regular_filters = {
+                k: v
+                for k, v in filtered_params.items()
+                if not ("." in k and not k.startswith("["))
+            }
+
+            if regular_filters:
+                query = build_query_filters(regular_filters, query)
+
+            if relationship_filters:
+                query = resolver._apply_relationship_filters(
+                    query, relationship_filters, collection
+                )
+        else:
+            # Standard filtering
+            query = build_query_filters(
+                filtered_params,
+                query,
+                reserved_params={
+                    "id",
+                    "field",
+                    "count_field",
+                    "limit",
+                    "offset",
+                    "sort",
+                    "order",
+                },
+            )
 
     # Get the JSON field to group by
     json_field = Document.data[field].astext
@@ -1009,7 +1238,7 @@ async def group_by_field(
 # ============================================
 
 
-@router.get("/{id}/schema")
+@router.get("/{id}/query/schema")
 async def get_collection_schema(
     id: str,
     db: Session = Depends(get_db),
@@ -1019,7 +1248,7 @@ async def get_collection_schema(
     """
     Analyze collection documents and return inferred schema.
 
-    Returns field names, types, and sample values.
+    Returns field names, types, sample values, and detected relationships.
     Useful for understanding your data structure.
     """
     project = proj[0]
@@ -1042,10 +1271,12 @@ async def get_collection_schema(
             "collection": collection.name,
             "document_count": 0,
             "fields": {},
+            "detected_relationships": {},
         }
 
     # Analyze field types
     field_analysis = {}
+    detected_relationships = {}
 
     for doc in sample_docs:
         if not doc.data:
@@ -1074,6 +1305,26 @@ async def get_collection_schema(
             if len(field_analysis[key]["samples"]) < 3:
                 field_analysis[key]["samples"].append(value)
 
+            # Detect potential relationships
+            if key.endswith("_id") and isinstance(value, str):
+                base_name = key[:-3]
+                target_collection = base_name + "s"
+                detected_relationships[key] = {
+                    "type": "belongs_to",
+                    "field": key,
+                    "target_collection": target_collection,
+                    "confidence": "high" if len(value) > 20 else "medium",
+                }
+            elif key.endswith("_ids") and isinstance(value, list):
+                base_name = key[:-4]
+                target_collection = base_name + "s"
+                detected_relationships[key] = {
+                    "type": "has_many",
+                    "field": key,
+                    "target_collection": target_collection,
+                    "confidence": "high",
+                }
+
     # Format results
     schema = {}
     for field, analysis in field_analysis.items():
@@ -1099,6 +1350,8 @@ async def get_collection_schema(
         "document_count": total_docs,
         "analyzed_documents": len(sample_docs),
         "fields": schema,
+        "detected_relationships": detected_relationships,
+        "usage_hint": "Use ?populate=<relationship_name> to auto-fetch related data",
     }
 
 
@@ -1107,6 +1360,9 @@ async def export_collection(
     id: str,
     request: Request,
     format: str = Query("json", regex="^(json|csv)$"),
+    populate: Optional[List[str]] = Query(
+        None, description="Relationships to include in export"
+    ),
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
@@ -1114,11 +1370,13 @@ async def export_collection(
     """
     Export collection data to JSON or CSV.
 
-    Supports filtering - only exports documents matching the filters.
+    Supports filtering and relationship population - only exports documents matching the filters.
 
     Examples:
         GET /collections/users/export?format=json
         GET /collections/users/export?format=csv&status=active&age_gte=18
+        GET /collections/posts/export?format=json&populate=author&populate=category
+        GET /collections/posts/export?format=json&author.role=admin&populate=author
     """
     from fastapi.responses import StreamingResponse
     import json
@@ -1132,28 +1390,53 @@ async def export_collection(
     # Verify permissions
     can_access_collection(collection, "read", user)
 
-    # Base query
-    query = db.query(Document).filter(Document.collection_id == collection.id)
+    # Extract query params
+    query_params = dict(request.query_params)
 
-    # Apply filters
-    filtered_params = {
-        k: v
-        for k, v in request.query_params.items()
-        if k not in {"format", "limit", "offset", "sort", "order"}
-    }
+    # Check if relationships are requested
+    has_relationships = populate or any(
+        "." in k and not k.startswith("[") for k in query_params.keys()
+    )
 
-    if filtered_params:
-        query = build_query_filters(
-            filtered_params,
-            query,
-            reserved_params={"id", "format", "limit", "offset", "sort", "order"},
+    if has_relationships:
+        # Use relationship resolver
+        resolver = AutoRelationshipResolver(db)
+
+        filtered_params = {
+            k: v
+            for k, v in query_params.items()
+            if k not in {"format", "populate", "limit", "offset", "sort", "order"}
+        }
+
+        result = resolver.query_with_relationships(
+            collection=collection,
+            query_params=filtered_params,
+            populate=populate,
+            select=None,
+            limit=10000,  # Export limit
+            offset=0,
         )
 
-    documents = query.all()
+        documents_data = result["data"]
+    else:
+        # Standard query
+        query = db.query(Document).filter(Document.collection_id == collection.id)
 
-    if format == "json":
-        # Export as JSON
-        data = [
+        filtered_params = {
+            k: v
+            for k, v in query_params.items()
+            if k not in {"format", "limit", "offset", "sort", "order"}
+        }
+
+        if filtered_params:
+            query = build_query_filters(
+                filtered_params,
+                query,
+                reserved_params={"id", "format", "limit", "offset", "sort", "order"},
+            )
+
+        documents = query.limit(10000).all()
+        documents_data = [
             {
                 "id": str(doc.id),
                 "created_at": doc.created_at.isoformat(),
@@ -1162,7 +1445,9 @@ async def export_collection(
             for doc in documents
         ]
 
-        json_str = json.dumps(data, indent=2, default=str)
+    if format == "json":
+        # Export as JSON
+        json_str = json.dumps(documents_data, indent=2, default=str)
 
         return StreamingResponse(
             io.BytesIO(json_str.encode()),
@@ -1174,30 +1459,44 @@ async def export_collection(
 
     elif format == "csv":
         # Export as CSV
-        if not documents:
+        if not documents_data:
             raise HTTPException(400, "No documents to export")
 
-        # Get all unique fields
+        # Flatten nested objects for CSV (relationships become separate columns)
+        flattened_data = []
         all_fields = set()
-        for doc in documents:
-            if doc.data:
-                all_fields.update(doc.data.keys())
 
-        fields = ["id", "created_at"] + sorted(all_fields)
+        for doc in documents_data:
+            flat_doc = {}
+            for key, value in doc.items():
+                if isinstance(value, dict):
+                    # Flatten nested dict (e.g., author.name, author.email)
+                    for nested_key, nested_value in value.items():
+                        flat_key = f"{key}.{nested_key}"
+                        flat_doc[flat_key] = nested_value
+                        all_fields.add(flat_key)
+                elif isinstance(value, list) and value and isinstance(value[0], dict):
+                    # Convert list of objects to JSON string
+                    flat_doc[key] = json.dumps(value, default=str)
+                    all_fields.add(key)
+                else:
+                    flat_doc[key] = value
+                    all_fields.add(key)
+
+            flattened_data.append(flat_doc)
+
+        # Ensure id and created_at are first
+        base_fields = ["id", "created_at"]
+        other_fields = sorted([f for f in all_fields if f not in base_fields])
+        fields = [f for f in base_fields if f in all_fields] + other_fields
 
         # Create CSV
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
 
-        for doc in documents:
-            row = {
-                "id": str(doc.id),
-                "created_at": doc.created_at.isoformat(),
-            }
-            if doc.data:
-                row.update(doc.data)
-            writer.writerow(row)
+        for doc in flattened_data:
+            writer.writerow(doc)
 
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode()),

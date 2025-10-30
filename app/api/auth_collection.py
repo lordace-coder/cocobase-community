@@ -193,7 +193,7 @@ def login_with_google(
     integration = IntegrationService(db)
     project_integration: ProjectIntegration = integration.get_project_integration(
         project.id,
-        "046deb41-47b3-403d-aee8-b80ccb80a87e",
+        "046deb41-47b3-403d-aee8-b80ccb80a87e", # Google OAuth Integration ID
     )
 
     if not project_integration or not project_integration.is_enabled:
