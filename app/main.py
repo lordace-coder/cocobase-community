@@ -4,6 +4,7 @@ from app.admin import *
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
+    ai_assistant,
     integrations,
     migrater,
     user,
@@ -78,6 +79,7 @@ app.include_router(collaborations.router)
 app.include_router(storage.router)
 app.include_router(cron.router)
 app.include_router(migrater.router)
+app.include_router(ai_assistant.router)
 # Add middleware
 
 
