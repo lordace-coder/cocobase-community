@@ -52,9 +52,6 @@ async def get_project_current_plan(
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription found")
 
-    # Check if expired
-    is_expired = subscription.is_expired()
-    days_remaining = subscription.days_remaining()
 
     return subscription
 
