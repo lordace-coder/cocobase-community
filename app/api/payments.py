@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from app.api.project import get_project_with_access
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.pricing import PricingPlan, ProjectSubscription, Payment
+from app.models.pricing import PricingPlan, ProjectSubscription, Payment, get_current_plan
 from app.models.user import User
 from app.models.app_client import Project
 from sqlalchemy.orm import Session
@@ -47,16 +47,7 @@ async def get_project_current_plan(
     project = get_project_with_access(project_id, user, db)
 
     # Get active subscription
-    subscription = (
-        db.query(ProjectSubscription)
-        .filter(
-            and_(
-                ProjectSubscription.project_id == project_id,
-                ProjectSubscription.is_active == True,
-            )
-        )
-        .first()
-    )
+    subscription =get_current_plan(project_id, db)
 
     if not subscription:
         return {
