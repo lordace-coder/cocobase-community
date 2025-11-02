@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from app.api.project import get_project_with_access
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.pricing import PricingPlan, ProjectSubscription, Payment, get_current_plan
+from app.models.pricing import (
+    PricingPlan,
+    ProjectSubscription,
+    Payment,
+    get_current_plan,
+)
 from app.models.user import User
 from app.models.app_client import Project
 from sqlalchemy.orm import Session
@@ -39,7 +44,7 @@ async def get_project_current_plan(
     project_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-)->PricingPlanSchema:
+) -> PricingPlanSchema:
     """
     Get the current active subscription plan for a project.
     """
@@ -47,11 +52,10 @@ async def get_project_current_plan(
     project = get_project_with_access(project_id, user, db)
 
     # Get active subscription
-    subscription =get_current_plan(project_id, db)
+    subscription = get_current_plan(project_id, db)
 
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription found")
-
 
     return subscription
 
@@ -125,7 +129,7 @@ async def initialize_payment(
             "project_name": project.name,
             "plan_name": plan.name,
         },
-        "callback_url": f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/payment/verify",
+        "callback_url": f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/project/{project_id}/subscriptions/verify",
     }
 
     headers = {
