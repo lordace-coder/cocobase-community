@@ -193,7 +193,7 @@ def login_with_google(
     integration = IntegrationService(db)
     project_integration: ProjectIntegration = integration.get_project_integration(
         project.id,
-        "046deb41-47b3-403d-aee8-b80ccb80a87e", # Google OAuth Integration ID
+        "046deb41-47b3-403d-aee8-b80ccb80a87e",  # Google OAuth Integration ID
     )
 
     if not project_integration or not project_integration.is_enabled:
@@ -211,7 +211,7 @@ def login_with_google(
 
     redirect_url = (
         config.get("GOOGLE_REDIRECT_URL")
-        or "https://cocobase.pxxl.click/auth-collections/auth-google-redirect/"
+        or "https://api.cocobase.buzz/auth-collections/auth-google-redirect/"
         + project.id
     )
     if not redirect_url:
@@ -251,7 +251,7 @@ async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
     # GET REDIRECT URL
     redirect_url = (
         config.get("GOOGLE_REDIRECT_URL")
-        or "https://cocobase.pxxl.click/auth-collections/auth-google-redirect/"
+        or "https://api.cocobase.buzz/auth-collections/auth-google-redirect/"
         + project_id
     )
     if not redirect_url:

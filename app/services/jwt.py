@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from jose import JWTError, jwt, ExpiredSignatureError
+from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 from fastapi.exceptions import HTTPException
 from fastapi import status
 from app.core import config as settings
@@ -50,8 +51,6 @@ def decode_app_user_token(token, projectId):
         return None
 
 
-
-
 def generate_reset_token(email: int):
     expire = datetime.utcnow() + timedelta(minutes=10)
     payload = {"sub": str(email), "exp": expire}
@@ -60,7 +59,9 @@ def generate_reset_token(email: int):
 
 def verify_reset_token(token: str):
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid token")

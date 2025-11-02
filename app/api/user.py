@@ -130,7 +130,7 @@ async def auth(code: str, db: Session = Depends(get_db)):
                 token = await client.fetch_token(
                     TOKEN_ENDPOINT,
                     code=code,
-                    redirect_uri=f"https://cocobase.pxxl.click/auth/auth-google",
+                    redirect_uri=f"https://api.cocobase.buzz/auth/auth-google",
                 )
             except Exception as e:
                 print(f"Token fetch error: {e}")
