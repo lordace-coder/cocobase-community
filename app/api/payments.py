@@ -39,7 +39,7 @@ async def get_project_current_plan(
     project_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+)->PricingPlanSchema:
     """
     Get the current active subscription plan for a project.
     """
@@ -50,39 +50,13 @@ async def get_project_current_plan(
     subscription =get_current_plan(project_id, db)
 
     if not subscription:
-        return {
-            "status": "no_subscription",
-            "message": "Project has no active subscription",
-            "project_id": project_id,
-            "project_name": project.name,
-        }
+        raise HTTPException(status_code=404, detail="No active subscription found")
 
     # Check if expired
     is_expired = subscription.is_expired()
     days_remaining = subscription.days_remaining()
 
-    return {
-        "status": "active" if not is_expired else "expired",
-        "subscription_id": subscription.id,
-        "plan": {
-            "id": subscription.plan.id,
-            "name": subscription.plan.name,
-            "description": subscription.plan.description,
-            "price": subscription.plan.price,
-            "currency": subscription.plan.currency,
-            "features": subscription.plan.features,
-            "max_requests_per_month": subscription.plan.max_requests_per_month,
-            "max_storage_mb": subscription.plan.max_storage_mb,
-            "max_users": subscription.plan.max_users,
-            "max_cloud_functions": subscription.plan.max_cloud_functions,
-        },
-        "start_date": subscription.start_date,
-        "end_date": subscription.end_date,
-        "days_remaining": days_remaining,
-        "is_expired": is_expired,
-        "auto_renew": subscription.auto_renew,
-        "project": {"id": project.id, "name": project.name},
-    }
+    return subscription
 
 
 @router.post("/initialize-subscription-payment/{plan_id}", summary="Initialize payment")
