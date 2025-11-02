@@ -47,7 +47,7 @@ def get_project_usage(project_id: str) -> int:
 
 def check_storage_limit(project_id: str, file_size: int,db):
     """Check if uploading a file would exceed storage limit"""
-    STORAGE_LIMIT_PER_PROJECT = get_current_plan(db=db,project=project_id).max_storage_mb
+    STORAGE_LIMIT_PER_PROJECT = get_current_plan(db=db,project=project_id).max_storage_mb * 1024 *1024
     current_usage = get_project_usage(project_id)
     if current_usage + file_size > STORAGE_LIMIT_PER_PROJECT:
         send_notification_to_project_users(

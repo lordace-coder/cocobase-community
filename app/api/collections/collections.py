@@ -639,6 +639,7 @@ def delete_document(
 @router.post("/file")
 async def upload_file_to_project(
     file: UploadFile,
+    db:Session=Depends(get_db),
     directory: Optional[str] = None,
     proj: tuple[Project, User] = Depends(require_api_access),
 ):
