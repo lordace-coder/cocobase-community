@@ -71,7 +71,7 @@ def get_project_storage_info(project_id: str, db: Session = Depends(get_db)):
     proj_usage = get_project_usage(project_id)
     total_storage = get_current_plan(db=db, project=project_id).max_storage_mb
 
-    total_storage = total_storage.max_storage_mb * 1024 * 1024  # Convert MB to bytes
+    total_storage = total_storage * 1024 * 1024  # Convert MB to bytes
     available_storage = total_storage - proj_usage
     return {
         "total_storage": total_storage,
