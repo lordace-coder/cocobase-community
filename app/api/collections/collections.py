@@ -659,7 +659,7 @@ async def upload_file_to_project(
         file_size = len(file_content)
 
         # Check storage limit
-        check_storage_limit(proj[0].id, file_size)
+        check_storage_limit(proj[0].id, file_size,db)
 
         # Upload file
         file_url = handle_file_upload(
