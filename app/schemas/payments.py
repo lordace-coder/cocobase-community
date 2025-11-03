@@ -12,4 +12,5 @@ class PricingPlanSchema(BaseModel):
     features: dict
     max_users: int
     max_storage_mb: int
+    max_cloud_functions: int
     max_requests_per_month: int
