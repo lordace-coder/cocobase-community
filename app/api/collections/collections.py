@@ -8,6 +8,8 @@ from fastapi import (
     Query,
     BackgroundTasks,
     UploadFile,
+    File,
+    Form,
 )
 from pydantic import BaseModel
 from sqlalchemy import cast, Integer, String, or_, and_, func
@@ -25,6 +27,7 @@ from app.schemas.collections import *
 from app.services.utils import handle_webhook_call
 from app.storage.storage import check_storage_limit, handle_file_upload
 from app.websockets.documents import RealtimeEvent, notify_collection_watchers
+import json
 
 
 router = APIRouter(
@@ -168,27 +171,77 @@ def delete_collection(
 
 
 @router.post("/documents", response_model=DocumentSchema)
-def create_new_document(
-    payload: DocumentCreateSchema,
+async def create_new_document(
     bg: BackgroundTasks,
-    collection: str,
+    collection: str = Query(..., description="Collection name or ID"),
+    data: str = Form(None, description="Document data as JSON string"),
+    files: Optional[List[UploadFile]] = File(None, description="Files to upload"),
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     """
-    Create a new document in a collection.
+    Create a new document in a collection with optional file uploads.
+
+    **Two Ways to Use:**
+
+    1. **JSON Only** (no files):
+       ```bash
+       POST /collections/documents?collection=products
+       Content-Type: application/json
+       
+       {
+         "data": {
+           "name": "Product 1",
+           "price": 99.99
+         }
+       }
+       ```
+
+    2. **With File Uploads** (multipart/form-data):
+       ```bash
+       POST /collections/documents?collection=products
+       Content-Type: multipart/form-data
+       
+       data: {"name": "Product 1", "price": 99.99}
+       files: [image1.jpg, image2.jpg]
+       ```
+
+    **File Upload Behavior:**
+    - If 1 file: Stored as `file_url` (string)
+    - If multiple files: Stored as `file_urls` (array)
+    - Files are uploaded to project storage
+    - URLs are automatically added to document data
+    - Original data fields are preserved
+
+    **Example Response:**
+    ```json
+    {
+      "id": "doc-123",
+      "data": {
+        "name": "Product 1",
+        "price": 99.99,
+        "file_url": "https://storage.example.com/image.jpg"
+      }
+    }
+    ```
 
     Optimized:
     - Made collection parameter required (removed None default)
     - Use helper function
     - Better error handling
     - Invalidate cache after creation
+    - **NEW: File upload support**
     """
     project, _ = proj
 
-    if not payload.data:
-        raise HTTPException(400, "Document data is required")
+    # Parse document data
+    document_data = {}
+    if data:
+        try:
+            document_data = json.loads(data)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in data field")
 
     # Try to find existing collection
     _collection = (
@@ -215,8 +268,43 @@ def create_new_document(
     can_access_collection(_collection, "create", user)
 
     try:
+        # Handle file uploads
+        uploaded_file_urls = []
+        if files:
+            for file in files:
+                if not file.filename:
+                    continue
+                
+                # Read file content
+                file_content = await file.read()
+                file_size = len(file_content)
+
+                # Check storage limit
+                check_storage_limit(project.id, file_size, db)
+
+                # Upload file
+                file_url = handle_file_upload(
+                    file_content, 
+                    project.id, 
+                    file.filename, 
+                    subdirectory=_collection.name  # Store in collection-named folder
+                )
+                
+                uploaded_file_urls.append(file_url)
+
+        # Add file URLs to document data
+        if uploaded_file_urls:
+            if len(uploaded_file_urls) == 1:
+                document_data["file_url"] = uploaded_file_urls[0]
+            else:
+                document_data["file_urls"] = uploaded_file_urls
+
+        if not document_data:
+            raise HTTPException(400, "Document data or files are required")
+
+        # Create document
         new_doc = Document(
-            data=payload.data,
+            data=document_data,
             collection_id=_collection.id,
         )
         db.add(new_doc)
@@ -225,7 +313,7 @@ def create_new_document(
 
         # Background tasks
         if _collection.webhook_url:
-            bg.add_task(handle_webhook_call, _collection.webhook_url, payload.data)
+            bg.add_task(handle_webhook_call, _collection.webhook_url, document_data)
 
         bg.add_task(
             notify_collection_watchers, _collection.name, new_doc, RealtimeEvent.CREATE
@@ -236,6 +324,8 @@ def create_new_document(
 
         return new_doc
 
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to create document: {str(e)}")
@@ -529,23 +619,75 @@ async def get_document(
 
 
 @router.patch("/{id}/documents/{document_id}", response_model=DocumentSchema)
-def edit_document(
+async def edit_document(
     id: str,
     document_id: str,
-    payload: DocumentUpdateSchema,
     bg: BackgroundTasks,
+    data: str = Form(None, description="Document data as JSON string"),
+    files: Optional[List[UploadFile]] = File(None, description="Files to upload"),
     proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
     """
-    Update a document.
+    Update a document with optional file uploads.
+
+    **Two Ways to Use:**
+
+    1. **JSON Only** (no files):
+       ```bash
+       PATCH /collections/products/documents/doc-123
+       Content-Type: application/json
+       
+       {
+         "data": {
+           "name": "Updated Product",
+           "price": 149.99
+         }
+       }
+       ```
+
+    2. **With File Uploads** (multipart/form-data):
+       ```bash
+       PATCH /collections/products/documents/doc-123
+       Content-Type: multipart/form-data
+       
+       data: {"name": "Updated Product"}
+       files: [new_image.jpg]
+       ```
+
+    **File Upload Behavior:**
+    - New files are uploaded and URLs added to document
+    - If 1 file: Updates/creates `file_url` field
+    - If multiple files: Appends to `file_urls` array (preserves existing URLs)
+    - Other data fields are merged (not replaced)
+
+    **Example:**
+    ```
+    # Before:
+    {
+      "name": "Product 1",
+      "price": 99.99,
+      "file_url": "https://old-image.jpg"
+    }
+
+    # Update with: data={"price": 149.99}, files=[new-image.jpg]
+
+    # After:
+    {
+      "name": "Product 1",        # Preserved
+      "price": 149.99,             # Updated
+      "file_url": "https://old-image.jpg",      # Preserved
+      "file_urls": ["https://new-image.jpg"]    # Added
+    }
+    ```
 
     Optimizations:
     - ✅ Use helper function
     - ✅ Eager load collection
     - ✅ Merge data instead of replace (safer)
     - ✅ Invalidate cache after update
+    - **NEW: File upload support**
     """
     project = proj[0]
 
@@ -565,28 +707,84 @@ def edit_document(
     if not document:
         raise HTTPException(404, "Document not found")
 
-    # Merge data instead of replacing (preserves fields not in payload)
-    if payload.data:
+    try:
+        # Parse update data
+        update_data = {}
+        if data:
+            try:
+                update_data = json.loads(data)
+            except json.JSONDecodeError:
+                raise HTTPException(400, "Invalid JSON in data field")
+
+        # Handle file uploads
+        uploaded_file_urls = []
+        if files:
+            for file in files:
+                if not file.filename:
+                    continue
+                
+                # Read file content
+                file_content = await file.read()
+                file_size = len(file_content)
+
+                # Check storage limit
+                check_storage_limit(project.id, file_size, db)
+
+                # Upload file
+                file_url = handle_file_upload(
+                    file_content, 
+                    project.id, 
+                    file.filename, 
+                    subdirectory=collection.name
+                )
+                
+                uploaded_file_urls.append(file_url)
+
+        # Add/merge file URLs
+        if uploaded_file_urls:
+            if len(uploaded_file_urls) == 1:
+                # Single file: Add as file_url
+                update_data["file_url"] = uploaded_file_urls[0]
+            else:
+                # Multiple files: Merge with existing file_urls array
+                existing_data = dict(document.data) if document.data else {}
+                existing_urls = existing_data.get("file_urls", [])
+                
+                if not isinstance(existing_urls, list):
+                    existing_urls = []
+                
+                update_data["file_urls"] = existing_urls + uploaded_file_urls
+
+        if not update_data and not files:
+            raise HTTPException(400, "No data or files provided for update")
+
+        # Merge data instead of replacing (preserves fields not in payload)
         existing_data = dict(document.data) if document.data else {}
-        existing_data.update(payload.data)
+        existing_data.update(update_data)
         document.data = existing_data
 
-    db.add(document)
-    db.commit()
-    db.refresh(document)
+        db.add(document)
+        db.commit()
+        db.refresh(document)
 
-    # Background tasks
-    bg.add_task(
-        notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
-    )
+        # Background tasks
+        bg.add_task(
+            notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
+        )
 
-    if collection.webhook_url:
-        bg.add_task(handle_webhook_call, collection.webhook_url, payload.data, True)
+        if collection.webhook_url:
+            bg.add_task(handle_webhook_call, collection.webhook_url, update_data, True)
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
+        # Invalidate cache
+        bg.add_task(invalidate_collection_cache, collection.id)
 
-    return document
+        return document
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to update document: {str(e)}")
 
 
 @router.delete("/{id}/documents/{document_id}")

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -131,13 +131,372 @@ def create_new_user(
         return {"access_token": create_app_user_token(user)}
 
 
-# list users
+# list users with advanced querying
 @router.get("/users")
 def list_all_users(
-    db: Session = Depends(get_db), proj: tuple[Project, User] = Depends(get_project)
-) -> list[AppUserResponse]:
-    users = db.query(AppUser).filter(AppUser.client_id == proj[0].id)
-    return users
+    request: Request,
+    db: Session = Depends(get_db),
+    proj: tuple[Project, User] = Depends(get_project),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    sort: Optional[str] = Query(
+        None, description="Field to sort by (email, created_at, or data.field)"
+    ),
+    order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
+    populate: Optional[list[str]] = Query(
+        None, description="Relationships to populate"
+    ),
+) -> dict:
+    """
+    List AppUsers with advanced filtering, relationships, and JSONB querying.
+
+    QUERY SYNTAX:
+    =============
+
+    1. FILTER STANDARD FIELDS:
+       /users?email_contains=gmail
+       /users?created_at_gte=2024-01-01
+
+    2. FILTER JSONB DATA FIELDS:
+       /users?data.username_contains=john
+       /users?data.role=admin
+       /users?data.age_gte=18
+
+    3. OR CONDITIONS:
+       /users?[or]data.role=admin&[or]data.role=moderator
+
+    4. MULTI-FIELD SEARCH:
+       /users?email__or__data.username_contains=john
+
+    5. POPULATE SINGLE RELATIONSHIPS:
+       /users?populate=profile_id
+       → Fetches related document or user
+
+    6. POPULATE MANY-TO-MANY RELATIONSHIPS:
+       /users?populate=followers_ids&populate=following_ids
+       → Fetches arrays of related users
+
+    7. FILTER BY ARRAY CONTAINMENT:
+       /users?data.followers_ids_array_contains=user-123
+       → Find users who have user-123 in their followers array
+
+    8. SORT BY JSONB FIELDS:
+       /users?sort=data.username&order=asc
+
+    OPERATORS: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in, notin, isnull, array_contains
+    """
+    from sqlalchemy import or_, and_, desc, asc, cast, String
+    from app.api.collections.utilities import RelationshipResolver
+
+    project = proj[0]
+
+    # Start with base query
+    query = db.query(AppUser).filter(AppUser.client_id == project.id)
+
+    # Get query parameters
+    query_params = dict(request.query_params)
+    filter_params = {
+        k: v
+        for k, v in query_params.items()
+        if k not in {"limit", "offset", "sort", "order", "populate"}
+    }
+
+    # Apply advanced filtering
+    if filter_params:
+        or_groups = {}
+        and_conditions = []
+
+        for key, value in filter_params.items():
+            # Check for OR conditions
+            if key.startswith("[or"):
+                import re
+
+                match = re.match(r"\[or(?::(\w+))?\](.+)", key)
+                if match:
+                    group_name = match.group(1) or "default"
+                    field_with_op = match.group(2)
+
+                    if group_name not in or_groups:
+                        or_groups[group_name] = []
+                    or_groups[group_name].append((field_with_op, value))
+                continue
+
+            # Check for multi-field OR
+            if "__or__" in key:
+                or_conditions = []
+                parts = key.split("__or__")
+                for part in parts:
+                    condition = _build_appuser_condition(part, value, AppUser)
+                    if condition is not None:
+                        or_conditions.append(condition)
+
+                if or_conditions:
+                    and_conditions.append(or_(*or_conditions))
+                continue
+
+            # Regular AND condition
+            condition = _build_appuser_condition(key, value, AppUser)
+            if condition is not None:
+                and_conditions.append(condition)
+
+        # Combine OR groups
+        for group_conditions in or_groups.values():
+            group_filters = []
+            for field_with_op, value in group_conditions:
+                condition = _build_appuser_condition(field_with_op, value, AppUser)
+                if condition is not None:
+                    group_filters.append(condition)
+
+            if group_filters:
+                and_conditions.append(or_(*group_filters))
+
+        # Apply all conditions
+        if and_conditions:
+            query = query.filter(and_(*and_conditions))
+
+    # Get total count
+    total = query.count()
+
+    # Apply sorting
+    if sort:
+        if sort.startswith("data."):
+            # Sort by JSONB field
+            json_field = sort.replace("data.", "")
+            sort_expr = AppUser.data[json_field].astext
+            query = query.order_by(
+                desc(sort_expr) if order == "desc" else asc(sort_expr)
+            )
+        else:
+            # Sort by standard field
+            sort_column = getattr(AppUser, sort, None)
+            if sort_column is not None:
+                query = query.order_by(
+                    desc(sort_column) if order == "desc" else asc(sort_column)
+                )
+            else:
+                query = query.order_by(desc(AppUser.created_at))
+    else:
+        query = query.order_by(desc(AppUser.created_at))
+
+    # Apply pagination
+    users = query.offset(offset).limit(limit).all()
+
+    # Convert to dict format
+    users_data = []
+    for user in users:
+        user_dict = {
+            "id": user.id,
+            "email": user.email,
+            "data": user.data or {},
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "oauth_id": user.oauth_id,
+            "roles": user.roles or [],
+        }
+        users_data.append(user_dict)
+
+    # Handle relationships if populate is specified
+    if populate and users_data:
+        resolver = RelationshipResolver(db, project.id)
+        for user_dict in users_data:
+            for rel_path in populate:
+                # Check if relationship field exists in data
+                if rel_path in user_dict.get("data", {}):
+                    related_value = user_dict["data"][rel_path]
+                    if related_value:
+                        # Check if it's an array (many-to-many) or single value
+                        if isinstance(related_value, list):
+                            # Handle array of IDs (followers_ids, following_ids, etc.)
+                            populated_items = []
+                            for related_id in related_value:
+                                if related_id:
+                                    # Try to populate from collections first
+                                    populated = resolver._populate_single_relationship(
+                                        rel_path, related_id, []
+                                    )
+                                    if populated:
+                                        populated_items.append(populated)
+                                    else:
+                                        # Try to populate from AppUsers
+                                        related_user = (
+                                            db.query(AppUser)
+                                            .filter(
+                                                AppUser.id == related_id,
+                                                AppUser.client_id == project.id,
+                                            )
+                                            .first()
+                                        )
+                                        if related_user:
+                                            populated_items.append(
+                                                {
+                                                    "id": related_user.id,
+                                                    "email": related_user.email,
+                                                    "data": related_user.data or {},
+                                                    "created_at": (
+                                                        related_user.created_at.isoformat()
+                                                        if related_user.created_at
+                                                        else None
+                                                    ),
+                                                }
+                                            )
+
+                            if populated_items:
+                                user_dict["data"][
+                                    f"{rel_path}_populated"
+                                ] = populated_items
+                        else:
+                            # Single relationship
+                            # Try to populate from collections first
+                            populated = resolver._populate_single_relationship(
+                                rel_path, related_value, []
+                            )
+                            if populated:
+                                user_dict["data"][f"{rel_path}_populated"] = populated
+                            else:
+                                # Try to populate from AppUsers
+                                related_user = (
+                                    db.query(AppUser)
+                                    .filter(
+                                        AppUser.id == related_value,
+                                        AppUser.client_id == project.id,
+                                    )
+                                    .first()
+                                )
+                                if related_user:
+                                    user_dict["data"][f"{rel_path}_populated"] = {
+                                        "id": related_user.id,
+                                        "email": related_user.email,
+                                        "data": related_user.data or {},
+                                        "created_at": (
+                                            related_user.created_at.isoformat()
+                                            if related_user.created_at
+                                            else None
+                                        ),
+                                    }
+
+    return {
+        "data": users_data,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < total,
+    }
+
+
+def _build_appuser_condition(field_with_op: str, value: str, model):
+    """Build SQLAlchemy condition for AppUser filtering (supports JSONB data field)"""
+    from sqlalchemy import cast, String
+
+    # Parse operator
+    operators = [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "contains",
+        "startswith",
+        "endswith",
+        "in",
+        "notin",
+        "isnull",
+        "array_contains",
+    ]
+    parts = field_with_op.split("_")
+
+    operator = "eq"
+    field_parts = parts
+
+    # Check for array_contains (special case - two words)
+    if len(parts) >= 3 and "_".join(parts[-2:]) == "array_contains":
+        operator = "array_contains"
+        field_parts = parts[:-2]
+    elif len(parts) >= 2 and parts[-1] in operators:
+        operator = parts[-1]
+        field_parts = parts[:-1]
+
+    field_name = "_".join(field_parts)
+
+    # Check if it's a JSONB data field
+    if field_name.startswith("data."):
+        json_field = field_name.replace("data.", "")
+        column = model.data[json_field].astext
+
+        # Special handling for array_contains (check if value is in array)
+        if operator == "array_contains":
+            # Check if the JSONB array contains the value
+            # Uses PostgreSQL's @> operator for JSONB containment
+            from sqlalchemy.dialects.postgresql import JSONB
+            import json
+
+            # Check if array contains the specific value
+            return model.data[json_field].astext.contains(value)
+
+        # Apply operator on JSONB field
+        if operator == "eq":
+            return column == value
+        elif operator == "ne":
+            return column != value
+        elif operator == "gt":
+            return cast(column, String) > value
+        elif operator == "gte":
+            return cast(column, String) >= value
+        elif operator == "lt":
+            return cast(column, String) < value
+        elif operator == "lte":
+            return cast(column, String) <= value
+        elif operator == "contains":
+            return column.ilike(f"%{value}%")
+        elif operator == "startswith":
+            return column.ilike(f"{value}%")
+        elif operator == "endswith":
+            return column.ilike(f"%{value}")
+        elif operator == "in":
+            values = [v.strip() for v in value.split(",")]
+            return column.in_(values)
+        elif operator == "notin":
+            values = [v.strip() for v in value.split(",")]
+            return ~column.in_(values)
+        elif operator == "isnull":
+            is_null = value.lower() in ["true", "1", "yes"]
+            return column.is_(None) if is_null else column.isnot(None)
+
+    # Standard field (email, created_at, etc.)
+    if not hasattr(model, field_name):
+        return None
+
+    column = getattr(model, field_name)
+
+    # Apply operator on standard field
+    if operator == "eq":
+        return column == value
+    elif operator == "ne":
+        return column != value
+    elif operator == "gt":
+        return column > value
+    elif operator == "gte":
+        return column >= value
+    elif operator == "lt":
+        return column < value
+    elif operator == "lte":
+        return column <= value
+    elif operator == "contains":
+        return column.ilike(f"%{value}%")
+    elif operator == "startswith":
+        return column.ilike(f"{value}%")
+    elif operator == "endswith":
+        return column.ilike(f"%{value}")
+    elif operator == "in":
+        values = [v.strip() for v in value.split(",")]
+        return column.in_(values)
+    elif operator == "notin":
+        values = [v.strip() for v in value.split(",")]
+        return ~column.in_(values)
+    elif operator == "isnull":
+        is_null = value.lower() in ["true", "1", "yes"]
+        return column.is_(None) if is_null else column.isnot(None)
+
+    return None
 
 
 # get user by id
