@@ -7,6 +7,7 @@ from app.api import (
     ai_assistant,
     integrations,
     migrater,
+    migrations,
     user,
     coco_hooks,
     project,
@@ -79,6 +80,7 @@ app.include_router(collaborations.router)
 app.include_router(storage.router)
 app.include_router(cron.router)
 app.include_router(migrater.router)
+app.include_router(migrations.router)
 app.include_router(ai_assistant.router)
 # Add middleware
 
