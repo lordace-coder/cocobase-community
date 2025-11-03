@@ -1,6 +1,16 @@
 from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from typing import Optional, List
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -14,6 +24,8 @@ from app.models.user import User
 from app.models.app_client import AppUser
 from app.services.email import notify_limit_reached, notify_limit_warning
 from app.services.google_login_helper import generate_oauth_url
+from app.storage.storage import check_storage_limit, handle_file_upload
+import json
 from app.services.integrations import IntegrationService
 from app.services.jwt import create_app_user_token, decode_app_user_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -56,13 +68,102 @@ def user_login(
 
 
 @router.post("/signup")
-def create_new_user(
-    payload: AppUserSchema,
+async def create_new_user(
+    request: Request,
     bg: BackgroundTasks,
+    data: str = Form(None, description="User data as JSON string"),
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
 ) -> AppTokenResponse:
     project = proj[0]
+
+    # Parse user data
+    user_data = {}
+    if data:
+        try:
+            user_data = json.loads(data)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in data field")
+
+    if not user_data.get("email") or not user_data.get("password"):
+        raise HTTPException(400, "Email and password are required")
+
+    # Parse multipart form to get all file uploads
+    form = await request.form()
+
+    # Separate named file fields from generic 'files' field
+    named_files = {}
+    generic_files = []
+
+    for field_name, field_value in form.multi_items():
+        if field_name in ("data",):  # Skip non-file fields
+            continue
+
+        if isinstance(field_value, UploadFile):
+            if field_name == "files":
+                generic_files.append(field_value)
+            else:
+                if field_name not in named_files:
+                    named_files[field_name] = []
+                named_files[field_name].append(field_value)
+
+    # Upload named field files
+    for field_name, upload_files in named_files.items():
+        uploaded_urls = []
+
+        for upload_file in upload_files:
+            if not upload_file.filename:
+                continue
+
+            file_content = await upload_file.read()
+            file_size = len(file_content)
+
+            check_storage_limit(project.id, file_size, db)
+
+            file_url = handle_file_upload(
+                file_content,
+                project.id,
+                upload_file.filename,
+                subdirectory="users",
+            )
+
+            uploaded_urls.append(file_url)
+
+        # Store in user data
+        if uploaded_urls:
+            if len(uploaded_urls) == 1:
+                user_data[field_name] = uploaded_urls[0]
+            else:
+                user_data[field_name] = uploaded_urls
+
+    # Upload generic files (default behavior)
+    if generic_files:
+        uploaded_generic_urls = []
+
+        for upload_file in generic_files:
+            if not upload_file.filename:
+                continue
+
+            file_content = await upload_file.read()
+            file_size = len(file_content)
+
+            check_storage_limit(project.id, file_size, db)
+
+            file_url = handle_file_upload(
+                file_content,
+                project.id,
+                upload_file.filename,
+                subdirectory="users",
+            )
+
+            uploaded_generic_urls.append(file_url)
+
+        if uploaded_generic_urls:
+            if len(uploaded_generic_urls) == 1:
+                user_data["file_url"] = uploaded_generic_urls[0]
+            else:
+                user_data["file_urls"] = uploaded_generic_urls
+
     # check if limit has been reached
     plan = get_current_plan(project, db)
 
@@ -114,16 +215,19 @@ def create_new_user(
 
     if (
         db.query(AppUser)
-        .filter(AppUser.client_id == project.id, AppUser.email == payload.email)
+        .filter(
+            AppUser.client_id == project.id, AppUser.email == user_data.get("email")
+        )
         .first()
     ):
         raise HTTPException(400, "User with this email already exists")
     else:
-        # todo check if user has reached his create user limit
+        # Extract password and remove from data (will be hashed separately)
+        password = user_data.pop("password")
 
-        # create new user
-        user = AppUser(**payload.model_dump())
-        user.set_password(payload.password)
+        # Create new user
+        user = AppUser(**user_data)
+        user.set_password(password)
         user.client_id = project.id
         db.add(user)
         db.commit()
@@ -522,20 +626,121 @@ def get_current_user_details(user: AppUser = Depends(get_app_user)) -> AppUserRe
 
 # update user data
 @router.patch("/user", response_model=AppUserResponse)
-def update_current_user_details(
-    payload: AppUserUpdateSchema,
+async def update_current_user_details(
+    request: Request,
+    data: str = Form(None, description="User data as JSON string"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> AppUserResponse:
-    # Update only the fields that are set in the payload
-    for field, value in payload.dict(exclude_unset=True).items():
-        setattr(user, field, value)
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+        raise HTTPException(401, "Not authenticated")
 
-    if payload.password:
-        user.set_password(payload.password)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    # Get user's project for storage
+    project = db.query(Project).filter(Project.id == user.client_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    # Parse update data
+    update_data = {}
+    if data:
+        try:
+            update_data = json.loads(data)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in data field")
+
+    # Parse multipart form to get all file uploads
+    form = await request.form()
+
+    # Separate named file fields from generic 'files' field
+    named_files = {}
+    generic_files = []
+
+    for field_name, field_value in form.multi_items():
+        if field_name in ("data",):  # Skip non-file fields
+            continue
+
+        if isinstance(field_value, UploadFile):
+            if field_name == "files":
+                generic_files.append(field_value)
+            else:
+                if field_name not in named_files:
+                    named_files[field_name] = []
+                named_files[field_name].append(field_value)
+
+    # Upload named field files
+    for field_name, upload_files in named_files.items():
+        uploaded_urls = []
+
+        for upload_file in upload_files:
+            if not upload_file.filename:
+                continue
+
+            file_content = await upload_file.read()
+            file_size = len(file_content)
+
+            check_storage_limit(project.id, file_size, db)
+
+            file_url = handle_file_upload(
+                file_content,
+                project.id,
+                upload_file.filename,
+                subdirectory="users",
+            )
+
+            uploaded_urls.append(file_url)
+
+        # Update field in user
+        if uploaded_urls:
+            if len(uploaded_urls) == 1:
+                update_data[field_name] = uploaded_urls[0]
+            else:
+                update_data[field_name] = uploaded_urls
+
+    # Upload generic files (default behavior)
+    if generic_files:
+        uploaded_generic_urls = []
+
+        for upload_file in generic_files:
+            if not upload_file.filename:
+                continue
+
+            file_content = await upload_file.read()
+            file_size = len(file_content)
+
+            check_storage_limit(project.id, file_size, db)
+
+            file_url = handle_file_upload(
+                file_content,
+                project.id,
+                upload_file.filename,
+                subdirectory="users",
+            )
+
+            uploaded_generic_urls.append(file_url)
+
+        if uploaded_generic_urls:
+            if len(uploaded_generic_urls) == 1:
+                update_data["file_url"] = uploaded_generic_urls[0]
+            else:
+                update_data["file_urls"] = uploaded_generic_urls
+
+    # Update user fields
+    if update_data:
+        # Handle password separately (needs to be hashed)
+        password = update_data.pop("password", None)
+
+        # Update other fields
+        for field, value in update_data.items():
+            setattr(user, field, value)
+
+        # Update password if provided
+        if password:
+            user.set_password(password)
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
     return user
 
