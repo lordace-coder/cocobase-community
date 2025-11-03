@@ -13,4 +13,3 @@ class Notification(Base):
     created: Mapped[date] = mapped_column(default=date.today, nullable=False)
     is_read: Mapped[bool] = mapped_column(default=False)
 
-    __table_args__ = (UniqueConstraint("user_id", "created", name="uq_user_created"),)
