@@ -189,7 +189,7 @@ async def create_new_document(
        ```bash
        POST /collections/documents?collection=products
        Content-Type: application/json
-       
+
        {
          "data": {
            "name": "Product 1",
@@ -202,7 +202,7 @@ async def create_new_document(
        ```bash
        POST /collections/documents?collection=products
        Content-Type: multipart/form-data
-       
+
        data: {"name": "Product 1", "price": 99.99}
        files: [image1.jpg, image2.jpg]
        ```
@@ -274,7 +274,7 @@ async def create_new_document(
             for file in files:
                 if not file.filename:
                     continue
-                
+
                 # Read file content
                 file_content = await file.read()
                 file_size = len(file_content)
@@ -284,12 +284,12 @@ async def create_new_document(
 
                 # Upload file
                 file_url = handle_file_upload(
-                    file_content, 
-                    project.id, 
-                    file.filename, 
-                    subdirectory=_collection.name  # Store in collection-named folder
+                    file_content,
+                    project.id,
+                    file.filename,
+                    subdirectory=_collection.name,  # Store in collection-named folder
                 )
-                
+
                 uploaded_file_urls.append(file_url)
 
         # Add file URLs to document data
@@ -638,7 +638,7 @@ async def edit_document(
        ```bash
        PATCH /collections/products/documents/doc-123
        Content-Type: application/json
-       
+
        {
          "data": {
            "name": "Updated Product",
@@ -651,7 +651,7 @@ async def edit_document(
        ```bash
        PATCH /collections/products/documents/doc-123
        Content-Type: multipart/form-data
-       
+
        data: {"name": "Updated Product"}
        files: [new_image.jpg]
        ```
@@ -722,7 +722,7 @@ async def edit_document(
             for file in files:
                 if not file.filename:
                     continue
-                
+
                 # Read file content
                 file_content = await file.read()
                 file_size = len(file_content)
@@ -732,12 +732,12 @@ async def edit_document(
 
                 # Upload file
                 file_url = handle_file_upload(
-                    file_content, 
-                    project.id, 
-                    file.filename, 
-                    subdirectory=collection.name
+                    file_content,
+                    project.id,
+                    file.filename,
+                    subdirectory=collection.name,
                 )
-                
+
                 uploaded_file_urls.append(file_url)
 
         # Add/merge file URLs
@@ -749,10 +749,10 @@ async def edit_document(
                 # Multiple files: Merge with existing file_urls array
                 existing_data = dict(document.data) if document.data else {}
                 existing_urls = existing_data.get("file_urls", [])
-                
+
                 if not isinstance(existing_urls, list):
                     existing_urls = []
-                
+
                 update_data["file_urls"] = existing_urls + uploaded_file_urls
 
         if not update_data and not files:
@@ -837,7 +837,7 @@ def delete_document(
 @router.post("/file")
 async def upload_file_to_project(
     file: UploadFile,
-    db:Session=Depends(get_db),
+    db: Session = Depends(get_db),
     directory: Optional[str] = None,
     proj: tuple[Project, User] = Depends(require_api_access),
 ):
@@ -858,7 +858,7 @@ async def upload_file_to_project(
         file_size = len(file_content)
 
         # Check storage limit
-        check_storage_limit(proj[0].id, file_size,db)
+        check_storage_limit(proj[0].id, file_size, db)
 
         # Upload file
         file_url = handle_file_upload(

@@ -5,6 +5,7 @@
 You can now upload files **directly** when creating or updating collection documents! The file URLs are automatically stored as fields in the document data.
 
 **Benefits:**
+
 - ✅ No need for separate upload + create operations
 - ✅ File URLs automatically stored in document
 - ✅ Supports single or multiple files
@@ -17,6 +18,7 @@ You can now upload files **directly** when creating or updating collection docum
 ## 📝 Create Document with Files
 
 ### Endpoint
+
 ```
 POST /collections/documents?collection={collection_name}
 ```
@@ -55,6 +57,7 @@ curl -X POST "https://api.cocobase.com/collections/documents?collection=products
 ```
 
 **Response:**
+
 ```json
 {
   "id": "doc-abc123",
@@ -76,6 +79,7 @@ curl -X POST "https://api.cocobase.com/collections/documents?collection=products
 ### File Field Naming
 
 #### Single File
+
 If you upload **1 file**, it's stored as `file_url` (string):
 
 ```json
@@ -86,11 +90,12 @@ If you upload **1 file**, it's stored as `file_url` (string):
 ```
 
 #### Multiple Files
+
 If you upload **2+ files**, they're stored as `file_urls` (array):
 
 ```json
 {
-  "name": "Product 1", 
+  "name": "Product 1",
   "file_urls": [
     "https://storage.cocobase.com/.../image1.jpg",
     "https://storage.cocobase.com/.../image2.jpg"
@@ -109,32 +114,35 @@ If you upload **2+ files**, they're stored as `file_urls` (array):
 const formData = new FormData();
 
 // Add JSON data
-formData.append('data', JSON.stringify({
-  name: 'Product 1',
-  price: 99.99,
-  category: 'electronics'
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Product 1",
+    price: 99.99,
+    category: "electronics",
+  })
+);
 
 // Add files
-const fileInput = document.querySelector('#file-input');
+const fileInput = document.querySelector("#file-input");
 for (const file of fileInput.files) {
-  formData.append('files', file);
+  formData.append("files", file);
 }
 
 // Upload
 const response = await fetch(
-  'https://api.cocobase.com/collections/documents?collection=products',
+  "https://api.cocobase.com/collections/documents?collection=products",
   {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Authorization': 'Bearer YOUR_API_KEY'
+      Authorization: "Bearer YOUR_API_KEY",
     },
-    body: formData
+    body: formData,
   }
 );
 
 const result = await response.json();
-console.log('Created:', result);
+console.log("Created:", result);
 ```
 
 ---
@@ -142,32 +150,35 @@ console.log('Created:', result);
 #### Using Axios
 
 ```javascript
-import axios from 'axios';
+import axios from "axios";
 
 const formData = new FormData();
 
 // Add data
-formData.append('data', JSON.stringify({
-  name: 'Product 1',
-  price: 99.99
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Product 1",
+    price: 99.99,
+  })
+);
 
 // Add files
-formData.append('files', file1);
-formData.append('files', file2);
+formData.append("files", file1);
+formData.append("files", file2);
 
 const response = await axios.post(
-  'https://api.cocobase.com/collections/documents?collection=products',
+  "https://api.cocobase.com/collections/documents?collection=products",
   formData,
   {
     headers: {
-      'Authorization': 'Bearer YOUR_API_KEY',
-      'Content-Type': 'multipart/form-data'
-    }
+      Authorization: "Bearer YOUR_API_KEY",
+      "Content-Type": "multipart/form-data",
+    },
   }
 );
 
-console.log('Created:', response.data);
+console.log("Created:", response.data);
 ```
 
 ---
@@ -175,6 +186,7 @@ console.log('Created:', response.data);
 ## ✏️ Update Document with Files
 
 ### Endpoint
+
 ```
 PATCH /collections/{collection}/documents/{document_id}
 ```
@@ -205,6 +217,7 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 ```
 
 **Before:**
+
 ```json
 {
   "name": "Product 1",
@@ -214,6 +227,7 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 ```
 
 **After:**
+
 ```json
 {
   "name": "Product 1",
@@ -234,6 +248,7 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 ```
 
 **Before:**
+
 ```json
 {
   "name": "Product 1",
@@ -245,14 +260,15 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 ```
 
 **After (appends new files):**
+
 ```json
 {
   "name": "Product 1",
   "file_urls": [
-    "https://storage.cocobase.com/.../image1.jpg",  // Preserved
-    "https://storage.cocobase.com/.../image2.jpg",  // Preserved
-    "https://storage.cocobase.com/.../image3.jpg",  // Added
-    "https://storage.cocobase.com/.../image4.jpg"   // Added
+    "https://storage.cocobase.com/.../image1.jpg", // Preserved
+    "https://storage.cocobase.com/.../image2.jpg", // Preserved
+    "https://storage.cocobase.com/.../image3.jpg", // Added
+    "https://storage.cocobase.com/.../image4.jpg" // Added
   ]
 }
 ```
@@ -276,28 +292,31 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 const formData = new FormData();
 
 // Update some fields
-formData.append('data', JSON.stringify({
-  name: 'Updated Product',
-  price: 149.99
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Updated Product",
+    price: 149.99,
+  })
+);
 
 // Add new images
-formData.append('files', newImage1);
-formData.append('files', newImage2);
+formData.append("files", newImage1);
+formData.append("files", newImage2);
 
 const response = await fetch(
-  'https://api.cocobase.com/collections/products/documents/doc-123',
+  "https://api.cocobase.com/collections/products/documents/doc-123",
   {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'Authorization': 'Bearer YOUR_API_KEY'
+      Authorization: "Bearer YOUR_API_KEY",
     },
-    body: formData
+    body: formData,
   }
 );
 
 const result = await response.json();
-console.log('Updated:', result);
+console.log("Updated:", result);
 ```
 
 ---
@@ -311,6 +330,7 @@ projects/{project_id}/{collection_name}/{filename}
 ```
 
 **Example:**
+
 ```
 projects/proj-abc123/products/laptop-image.jpg
 projects/proj-abc123/users/avatar.png
@@ -318,6 +338,7 @@ projects/proj-abc123/posts/banner.jpg
 ```
 
 **Benefits:**
+
 - ✅ Files organized by collection
 - ✅ Easy to identify which collection files belong to
 - ✅ Easier cleanup if collection is deleted
@@ -332,26 +353,30 @@ projects/proj-abc123/posts/banner.jpg
 ```javascript
 // Create product with images
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  name: 'Gaming Laptop',
-  price: 1299.99,
-  category: 'electronics',
-  specs: {
-    ram: '16GB',
-    storage: '512GB SSD'
-  }
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Gaming Laptop",
+    price: 1299.99,
+    category: "electronics",
+    specs: {
+      ram: "16GB",
+      storage: "512GB SSD",
+    },
+  })
+);
 
-formData.append('files', productImage);
-formData.append('files', thumbnailImage);
+formData.append("files", productImage);
+formData.append("files", thumbnailImage);
 
-await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  body: formData
+await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  body: formData,
 });
 ```
 
 **Result:**
+
 ```json
 {
   "id": "prod-123",
@@ -375,21 +400,25 @@ await fetch('/collections/documents?collection=products', {
 ```javascript
 // Upload avatar with user data
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  name: 'John Doe',
-  email: 'john@example.com',
-  bio: 'Software developer'
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "John Doe",
+    email: "john@example.com",
+    bio: "Software developer",
+  })
+);
 
-formData.append('files', avatarFile);
+formData.append("files", avatarFile);
 
-await fetch('/collections/documents?collection=users', {
-  method: 'POST',
-  body: formData
+await fetch("/collections/documents?collection=users", {
+  method: "POST",
+  body: formData,
 });
 ```
 
 **Result:**
+
 ```json
 {
   "id": "user-456",
@@ -408,18 +437,21 @@ await fetch('/collections/documents?collection=users', {
 
 ```javascript
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  title: 'Getting Started with CocoBase',
-  content: 'Lorem ipsum...',
-  author_id: 'user-123',
-  tags: ['tutorial', 'beginner']
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    title: "Getting Started with CocoBase",
+    content: "Lorem ipsum...",
+    author_id: "user-123",
+    tags: ["tutorial", "beginner"],
+  })
+);
 
-formData.append('files', coverImage);
+formData.append("files", coverImage);
 
-await fetch('/collections/documents?collection=posts', {
-  method: 'POST',
-  body: formData
+await fetch("/collections/documents?collection=posts", {
+  method: "POST",
+  body: formData,
 });
 ```
 
@@ -430,23 +462,27 @@ await fetch('/collections/documents?collection=posts', {
 ```javascript
 // Create document with multiple attachments
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  title: 'Project Proposal',
-  description: 'Q1 2024 Initiative',
-  status: 'draft'
-}));
+formData.append(
+  "data",
+  JSON.stringify({
+    title: "Project Proposal",
+    description: "Q1 2024 Initiative",
+    status: "draft",
+  })
+);
 
-formData.append('files', pdfFile);
-formData.append('files', spreadsheet);
-formData.append('files', presentationFile);
+formData.append("files", pdfFile);
+formData.append("files", spreadsheet);
+formData.append("files", presentationFile);
 
-await fetch('/collections/documents?collection=proposals', {
-  method: 'POST',
-  body: formData
+await fetch("/collections/documents?collection=proposals", {
+  method: "POST",
+  body: formData,
 });
 ```
 
 **Result:**
+
 ```json
 {
   "id": "doc-789",
@@ -470,11 +506,13 @@ await fetch('/collections/documents?collection=proposals', {
 File uploads automatically check your project's storage limit based on your pricing plan.
 
 **Limits:**
+
 - Free Plan: 50MB total storage
 - Pro Plan: 500MB total storage
 - Enterprise: Custom limits
 
 **Error Response (Limit Exceeded):**
+
 ```json
 {
   "detail": "Storage limit exceeded. Current: 48.5MB, Limit: 50MB"
@@ -482,6 +520,7 @@ File uploads automatically check your project's storage limit based on your pric
 ```
 
 **What Happens:**
+
 1. System calculates current project storage usage
 2. Checks if new file would exceed limit
 3. Rejects upload if over limit
@@ -499,28 +538,31 @@ By default, files are stored as `file_url` or `file_urls`. But you can customize
 ```javascript
 // Upload first
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  name: 'Product'
-}));
-formData.append('files', image);
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Product",
+  })
+);
+formData.append("files", image);
 
-const response = await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  body: formData
+const response = await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  body: formData,
 });
 
 const doc = await response.json();
 
 // Then update field names
 await fetch(`/collections/products/documents/${doc.id}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
+  method: "PATCH",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     data: {
-      image_url: doc.data.file_url,  // Rename
-      file_url: null  // Remove old field
-    }
-  })
+      image_url: doc.data.file_url, // Rename
+      file_url: null, // Remove old field
+    },
+  }),
 });
 ```
 
@@ -531,27 +573,27 @@ await fetch(`/collections/products/documents/${doc.id}`, {
 ```javascript
 // 1. Upload file first
 const fileFormData = new FormData();
-fileFormData.append('file', imageFile);
+fileFormData.append("file", imageFile);
 
-const uploadResponse = await fetch('/collections/file', {
-  method: 'POST',
-  body: fileFormData
+const uploadResponse = await fetch("/collections/file", {
+  method: "POST",
+  body: fileFormData,
 });
 
 const { url } = await uploadResponse.json();
 
 // 2. Create document with custom field name
-await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     data: {
-      name: 'Product',
-      primary_image: url,      // ← Custom name
-      thumbnail: url,          // ← Another custom name
-      gallery: [url, url]      // ← Array with custom name
-    }
-  })
+      name: "Product",
+      primary_image: url, // ← Custom name
+      thumbnail: url, // ← Another custom name
+      gallery: [url, url], // ← Array with custom name
+    },
+  }),
 });
 ```
 
@@ -564,25 +606,25 @@ await fetch('/collections/documents?collection=products', {
 ```javascript
 // Step 1: Upload file
 const fileData = new FormData();
-fileData.append('file', imageFile);
+fileData.append("file", imageFile);
 
-const uploadRes = await fetch('/collections/file', {
-  method: 'POST',
-  body: fileData
+const uploadRes = await fetch("/collections/file", {
+  method: "POST",
+  body: fileData,
 });
 
 const { url } = await uploadRes.json();
 
 // Step 2: Create document
-await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     data: {
-      name: 'Product',
-      image_url: url  // Manually add URL
-    }
-  })
+      name: "Product",
+      image_url: url, // Manually add URL
+    },
+  }),
 });
 ```
 
@@ -593,18 +635,22 @@ await fetch('/collections/documents?collection=products', {
 ```javascript
 // Single request!
 const formData = new FormData();
-formData.append('data', JSON.stringify({
-  name: 'Product'
-}));
-formData.append('files', imageFile);
+formData.append(
+  "data",
+  JSON.stringify({
+    name: "Product",
+  })
+);
+formData.append("files", imageFile);
 
-await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  body: formData
+await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  body: formData,
 });
 ```
 
 **Benefits:**
+
 - ⚡ Faster (one request vs two)
 - ✅ Atomic (all or nothing)
 - 🎯 Simpler code
@@ -615,46 +661,46 @@ await fetch('/collections/documents?collection=products', {
 ## 📱 React Example
 
 ```jsx
-import { useState } from 'react';
+import { useState } from "react";
 
 function ProductForm() {
   const [formData, setFormData] = useState({
-    name: '',
-    price: ''
+    name: "",
+    price: "",
   });
   const [files, setFiles] = useState([]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     const data = new FormData();
-    
+
     // Add JSON data
-    data.append('data', JSON.stringify(formData));
-    
+    data.append("data", JSON.stringify(formData));
+
     // Add files
-    files.forEach(file => {
-      data.append('files', file);
+    files.forEach((file) => {
+      data.append("files", file);
     });
-    
+
     try {
       const response = await fetch(
-        'https://api.cocobase.com/collections/documents?collection=products',
+        "https://api.cocobase.com/collections/documents?collection=products",
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Authorization': `Bearer ${API_KEY}`
+            Authorization: `Bearer ${API_KEY}`,
           },
-          body: data
+          body: data,
         }
       );
-      
+
       const result = await response.json();
-      console.log('Created:', result);
-      
+      console.log("Created:", result);
+
       // Success! File URLs are in result.data.file_urls
     } catch (error) {
-      console.error('Error:', error);
+      console.error("Error:", error);
     }
   };
 
@@ -664,22 +710,22 @@ function ProductForm() {
         type="text"
         placeholder="Product Name"
         value={formData.name}
-        onChange={(e) => setFormData({...formData, name: e.target.value})}
+        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
       />
-      
+
       <input
         type="number"
         placeholder="Price"
         value={formData.price}
-        onChange={(e) => setFormData({...formData, price: e.target.value})}
+        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
       />
-      
+
       <input
         type="file"
         multiple
         onChange={(e) => setFiles(Array.from(e.target.files))}
       />
-      
+
       <button type="submit">Create Product</button>
     </form>
   );
@@ -698,15 +744,15 @@ function ProductForm() {
 // ❌ WRONG
 fetch(url, {
   headers: {
-    'Content-Type': 'multipart/form-data'  // DON'T DO THIS!
+    "Content-Type": "multipart/form-data", // DON'T DO THIS!
   },
-  body: formData
+  body: formData,
 });
 
 // ✅ CORRECT
 fetch(url, {
   // No Content-Type header - browser sets it automatically with boundary
-  body: formData
+  body: formData,
 });
 ```
 
@@ -738,12 +784,16 @@ When updating with multiple files, **new files are appended** to `file_urls`:
 
 ```javascript
 // Before:
-{ file_urls: ['url1', 'url2'] }
+{
+  file_urls: ["url1", "url2"];
+}
 
 // Upload 2 more files
 
 // After:
-{ file_urls: ['url1', 'url2', 'url3', 'url4'] }
+{
+  file_urls: ["url1", "url2", "url3", "url4"];
+}
 ```
 
 To replace files, you need to manually update the field:
@@ -752,13 +802,13 @@ To replace files, you need to manually update the field:
 // Upload new files
 // Then update:
 await fetch(`/collections/products/documents/${id}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
+  method: "PATCH",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     data: {
-      file_urls: ['new-url-only']  // Replace entire array
-    }
-  })
+      file_urls: ["new-url-only"], // Replace entire array
+    },
+  }),
 });
 ```
 
@@ -770,18 +820,18 @@ Currently, the API doesn't validate file types or names. Best practices:
 
 ```javascript
 // Client-side validation
-const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
 const maxSize = 5 * 1024 * 1024; // 5MB
 
 function validateFile(file) {
   if (!allowedTypes.includes(file.type)) {
-    throw new Error('Invalid file type');
+    throw new Error("Invalid file type");
   }
-  
+
   if (file.size > maxSize) {
-    throw new Error('File too large');
+    throw new Error("File too large");
   }
-  
+
   return true;
 }
 ```
@@ -791,6 +841,7 @@ function validateFile(file) {
 ## 🎯 Summary
 
 **Key Features:**
+
 - ✅ Upload files during document create/update
 - ✅ Single or multiple files supported
 - ✅ Automatic URL storage in document
@@ -800,6 +851,7 @@ function validateFile(file) {
 - ✅ Atomic operations (all or nothing)
 
 **Use When:**
+
 - Creating products with images
 - User profiles with avatars
 - Blog posts with cover images
@@ -807,6 +859,7 @@ function validateFile(file) {
 - Any record that needs associated files
 
 **Avoid When:**
+
 - You need custom field names (use separate upload)
 - Files are large and should upload in background
 - You want fine-grained control over storage paths

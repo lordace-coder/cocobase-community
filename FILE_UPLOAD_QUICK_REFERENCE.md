@@ -3,6 +3,7 @@
 ## 📝 Create Document with Files
 
 ### cURL
+
 ```bash
 curl -X POST "https://api.cocobase.com/collections/documents?collection=products" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -12,20 +13,22 @@ curl -X POST "https://api.cocobase.com/collections/documents?collection=products
 ```
 
 ### JavaScript/Fetch
+
 ```javascript
 const formData = new FormData();
-formData.append('data', JSON.stringify({ name: 'Product 1', price: 99.99 }));
-formData.append('files', file1);
-formData.append('files', file2);
+formData.append("data", JSON.stringify({ name: "Product 1", price: 99.99 }));
+formData.append("files", file1);
+formData.append("files", file2);
 
-await fetch('/collections/documents?collection=products', {
-  method: 'POST',
-  headers: { 'Authorization': 'Bearer YOUR_API_KEY' },
-  body: formData
+await fetch("/collections/documents?collection=products", {
+  method: "POST",
+  headers: { Authorization: "Bearer YOUR_API_KEY" },
+  body: formData,
 });
 ```
 
 ### Python/Requests
+
 ```python
 import requests
 
@@ -51,6 +54,7 @@ response = requests.post(
 ## ✏️ Update Document with Files
 
 ### cURL
+
 ```bash
 curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -59,15 +63,16 @@ curl -X PATCH "https://api.cocobase.com/collections/products/documents/doc-123" 
 ```
 
 ### JavaScript/Fetch
+
 ```javascript
 const formData = new FormData();
-formData.append('data', JSON.stringify({ price: 149.99 }));
-formData.append('files', newFile);
+formData.append("data", JSON.stringify({ price: 149.99 }));
+formData.append("files", newFile);
 
-await fetch('/collections/products/documents/doc-123', {
-  method: 'PATCH',
-  headers: { 'Authorization': 'Bearer YOUR_API_KEY' },
-  body: formData
+await fetch("/collections/products/documents/doc-123", {
+  method: "PATCH",
+  headers: { Authorization: "Bearer YOUR_API_KEY" },
+  body: formData,
 });
 ```
 
@@ -76,6 +81,7 @@ await fetch('/collections/products/documents/doc-123', {
 ## 📊 Response Format
 
 ### Single File
+
 ```json
 {
   "id": "doc-123",
@@ -87,6 +93,7 @@ await fetch('/collections/products/documents/doc-123', {
 ```
 
 ### Multiple Files
+
 ```json
 {
   "id": "doc-123",
@@ -116,6 +123,7 @@ await fetch('/collections/products/documents/doc-123', {
 ## 🔄 Migration
 
 ### Before (2 requests)
+
 ```javascript
 // 1. Upload file
 const uploadRes = await fetch('/collections/file', {...});
@@ -128,12 +136,13 @@ await fetch('/collections/documents?collection=products', {
 ```
 
 ### After (1 request)
+
 ```javascript
 const formData = new FormData();
-formData.append('data', JSON.stringify({ name: 'Product' }));
-formData.append('files', imageFile);
+formData.append("data", JSON.stringify({ name: "Product" }));
+formData.append("files", imageFile);
 
-await fetch('/collections/documents?collection=products', {
-  body: formData
+await fetch("/collections/documents?collection=products", {
+  body: formData,
 });
 ```

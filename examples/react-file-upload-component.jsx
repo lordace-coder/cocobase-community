@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 /**
  * Complete example: Product form with file uploads
@@ -7,12 +7,12 @@ import React, { useState } from 'react';
 
 const ProductFormWithFiles = () => {
   const [formData, setFormData] = useState({
-    name: '',
-    price: '',
-    description: '',
-    category: 'electronics'
+    name: "",
+    price: "",
+    description: "",
+    category: "electronics",
   });
-  
+
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -20,14 +20,14 @@ const ProductFormWithFiles = () => {
   const [success, setSuccess] = useState(null);
 
   const API_KEY = process.env.REACT_APP_COCOBASE_API_KEY;
-  const BASE_URL = 'https://api.cocobase.com';
+  const BASE_URL = "https://api.cocobase.com";
 
   // Handle text input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
@@ -37,14 +37,14 @@ const ProductFormWithFiles = () => {
     setSelectedFiles(files);
 
     // Create preview URLs
-    const previews = files.map(file => URL.createObjectURL(file));
+    const previews = files.map((file) => URL.createObjectURL(file));
     setPreviewUrls(previews);
   };
 
   // Remove a selected file
   const removeFile = (index) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setPreviewUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Create product with files
@@ -57,62 +57,64 @@ const ProductFormWithFiles = () => {
     try {
       // Create FormData
       const data = new FormData();
-      
+
       // Add product data as JSON string
-      data.append('data', JSON.stringify({
-        name: formData.name,
-        price: parseFloat(formData.price),
-        description: formData.description,
-        category: formData.category
-      }));
-      
+      data.append(
+        "data",
+        JSON.stringify({
+          name: formData.name,
+          price: parseFloat(formData.price),
+          description: formData.description,
+          category: formData.category,
+        })
+      );
+
       // Add all selected files
-      selectedFiles.forEach(file => {
-        data.append('files', file);
+      selectedFiles.forEach((file) => {
+        data.append("files", file);
       });
 
       // Send request
       const response = await fetch(
         `${BASE_URL}/collections/documents?collection=products`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Authorization': `Bearer ${API_KEY}`
+            Authorization: `Bearer ${API_KEY}`,
           },
-          body: data
+          body: data,
         }
       );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to create product');
+        throw new Error(errorData.detail || "Failed to create product");
       }
 
       const result = await response.json();
-      
-      setSuccess('Product created successfully!');
-      console.log('Created product:', result);
-      
+
+      setSuccess("Product created successfully!");
+      console.log("Created product:", result);
+
       // Show file URLs
       if (result.data.file_url) {
-        console.log('File URL:', result.data.file_url);
+        console.log("File URL:", result.data.file_url);
       } else if (result.data.file_urls) {
-        console.log('File URLs:', result.data.file_urls);
+        console.log("File URLs:", result.data.file_urls);
       }
 
       // Reset form
       setFormData({
-        name: '',
-        price: '',
-        description: '',
-        category: 'electronics'
+        name: "",
+        price: "",
+        description: "",
+        category: "electronics",
       });
       setSelectedFiles([]);
       setPreviewUrls([]);
-
     } catch (err) {
       setError(err.message);
-      console.error('Error:', err);
+      console.error("Error:", err);
     } finally {
       setLoading(false);
     }
@@ -153,9 +155,7 @@ const ProductFormWithFiles = () => {
 
         {/* Price */}
         <div>
-          <label className="block text-sm font-medium mb-2">
-            Price ($) *
-          </label>
+          <label className="block text-sm font-medium mb-2">Price ($) *</label>
           <input
             type="number"
             name="price"
@@ -171,9 +171,7 @@ const ProductFormWithFiles = () => {
 
         {/* Description */}
         <div>
-          <label className="block text-sm font-medium mb-2">
-            Description
-          </label>
+          <label className="block text-sm font-medium mb-2">Description</label>
           <textarea
             name="description"
             value={formData.description}
@@ -186,9 +184,7 @@ const ProductFormWithFiles = () => {
 
         {/* Category */}
         <div>
-          <label className="block text-sm font-medium mb-2">
-            Category
-          </label>
+          <label className="block text-sm font-medium mb-2">Category</label>
           <select
             name="category"
             value={formData.category}
@@ -254,12 +250,12 @@ const ProductFormWithFiles = () => {
           type="submit"
           disabled={loading}
           className={`w-full py-3 px-4 rounded-lg text-white font-medium ${
-            loading 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-blue-500 hover:bg-blue-600'
+            loading
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600"
           }`}
         >
-          {loading ? 'Creating Product...' : 'Create Product'}
+          {loading ? "Creating Product..." : "Create Product"}
         </button>
       </form>
     </div>
@@ -267,7 +263,6 @@ const ProductFormWithFiles = () => {
 };
 
 export default ProductFormWithFiles;
-
 
 /**
  * EXAMPLE 2: Update Product with New Images
@@ -279,7 +274,7 @@ export const UpdateProductWithFiles = ({ productId, initialData }) => {
   const [loading, setLoading] = useState(false);
 
   const API_KEY = process.env.REACT_APP_COCOBASE_API_KEY;
-  const BASE_URL = 'https://api.cocobase.com';
+  const BASE_URL = "https://api.cocobase.com";
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -287,42 +282,44 @@ export const UpdateProductWithFiles = ({ productId, initialData }) => {
 
     try {
       const data = new FormData();
-      
+
       // Add updated data
-      data.append('data', JSON.stringify({
-        name: formData.name,
-        price: formData.price,
-        description: formData.description
-      }));
-      
+      data.append(
+        "data",
+        JSON.stringify({
+          name: formData.name,
+          price: formData.price,
+          description: formData.description,
+        })
+      );
+
       // Add new files (will be appended to existing file_urls)
-      newFiles.forEach(file => {
-        data.append('files', file);
+      newFiles.forEach((file) => {
+        data.append("files", file);
       });
 
       const response = await fetch(
         `${BASE_URL}/collections/products/documents/${productId}`,
         {
-          method: 'PATCH',
+          method: "PATCH",
           headers: {
-            'Authorization': `Bearer ${API_KEY}`
+            Authorization: `Bearer ${API_KEY}`,
           },
-          body: data
+          body: data,
         }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to update product');
+        throw new Error("Failed to update product");
       }
 
       const result = await response.json();
-      console.log('Updated product:', result);
-      
-      alert('Product updated successfully!');
-      
+      console.log("Updated product:", result);
+
+      alert("Product updated successfully!");
     } catch (err) {
-      console.error('Error:', err);
-      alert('Failed to update product');
+      console.error("Error:", err);
+      alert("Failed to update product");
     } finally {
       setLoading(false);
     }
@@ -331,20 +328,19 @@ export const UpdateProductWithFiles = ({ productId, initialData }) => {
   return (
     <form onSubmit={handleUpdate}>
       {/* Form fields similar to create form */}
-      
+
       <input
         type="file"
         multiple
         onChange={(e) => setNewFiles(Array.from(e.target.files))}
       />
-      
+
       <button type="submit" disabled={loading}>
-        {loading ? 'Updating...' : 'Update Product'}
+        {loading ? "Updating..." : "Update Product"}
       </button>
     </form>
   );
 };
-
 
 /**
  * EXAMPLE 3: Simple File Upload Hook
@@ -360,30 +356,29 @@ export const useFileUpload = () => {
 
     try {
       const formData = new FormData();
-      formData.append('data', JSON.stringify(data));
-      
-      files.forEach(file => {
-        formData.append('files', file);
+      formData.append("data", JSON.stringify(data));
+
+      files.forEach((file) => {
+        formData.append("files", file);
       });
 
       const response = await fetch(
         `${process.env.REACT_APP_API_URL}/collections/documents?collection=${collection}`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Authorization': `Bearer ${process.env.REACT_APP_API_KEY}`
+            Authorization: `Bearer ${process.env.REACT_APP_API_KEY}`,
           },
-          body: formData
+          body: formData,
         }
       );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Upload failed');
+        throw new Error(errorData.detail || "Upload failed");
       }
 
       return await response.json();
-
     } catch (err) {
       setError(err.message);
       throw err;
