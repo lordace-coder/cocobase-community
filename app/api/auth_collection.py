@@ -77,9 +77,18 @@ async def create_new_user(
 ) -> AppTokenResponse:
     project = proj[0]
 
-    # Parse user data
+    # Parse user data - support both JSON body and multipart form
     user_data = {}
-    if data:
+    content_type = request.headers.get("content-type", "")
+    
+    if "application/json" in content_type:
+        # Handle JSON request body
+        try:
+            user_data = await request.json()
+        except Exception:
+            raise HTTPException(400, "Invalid JSON in request body")
+    elif data:
+        # Handle multipart form data
         try:
             user_data = json.loads(data)
         except json.JSONDecodeError:
@@ -88,24 +97,27 @@ async def create_new_user(
     if not user_data.get("email") or not user_data.get("password"):
         raise HTTPException(400, "Email and password are required")
 
-    # Parse multipart form to get all file uploads
-    form = await request.form()
+    # Parse multipart form to get all file uploads (only if multipart request)
+    form = None
+    if "multipart/form-data" in content_type:
+        form = await request.form()
 
     # Separate named file fields from generic 'files' field
     named_files = {}
     generic_files = []
 
-    for field_name, field_value in form.multi_items():
-        if field_name in ("data",):  # Skip non-file fields
-            continue
+    if form:
+        for field_name, field_value in form.multi_items():
+            if field_name in ("data",):  # Skip non-file fields
+                continue
 
-        if isinstance(field_value, UploadFile):
-            if field_name == "files":
-                generic_files.append(field_value)
-            else:
-                if field_name not in named_files:
-                    named_files[field_name] = []
-                named_files[field_name].append(field_value)
+            if isinstance(field_value, UploadFile):
+                if field_name == "files":
+                    generic_files.append(field_value)
+                else:
+                    if field_name not in named_files:
+                        named_files[field_name] = []
+                    named_files[field_name].append(field_value)
 
     # Upload named field files
     for field_name, upload_files in named_files.items():
@@ -622,32 +634,44 @@ async def update_current_user_details(
     if not project:
         raise HTTPException(404, "Project not found")
 
-    # Parse update data
+    # Parse update data - support both JSON body and multipart form
     update_data = {}
-    if data:
+    content_type = request.headers.get("content-type", "")
+    
+    if "application/json" in content_type:
+        # Handle JSON request body
+        try:
+            update_data = await request.json()
+        except Exception:
+            raise HTTPException(400, "Invalid JSON in request body")
+    elif data:
+        # Handle multipart form data
         try:
             update_data = json.loads(data)
         except json.JSONDecodeError:
             raise HTTPException(400, "Invalid JSON in data field")
 
-    # Parse multipart form to get all file uploads
-    form = await request.form()
+    # Parse multipart form to get all file uploads (only if multipart request)
+    form = None
+    if "multipart/form-data" in content_type:
+        form = await request.form()
 
     # Separate named file fields from generic 'files' field
     named_files = {}
     generic_files = []
 
-    for field_name, field_value in form.multi_items():
-        if field_name in ("data",):  # Skip non-file fields
-            continue
+    if form:
+        for field_name, field_value in form.multi_items():
+            if field_name in ("data",):  # Skip non-file fields
+                continue
 
-        if isinstance(field_value, UploadFile):
-            if field_name == "files":
-                generic_files.append(field_value)
-            else:
-                if field_name not in named_files:
-                    named_files[field_name] = []
-                named_files[field_name].append(field_value)
+            if isinstance(field_value, UploadFile):
+                if field_name == "files":
+                    generic_files.append(field_value)
+                else:
+                    if field_name not in named_files:
+                        named_files[field_name] = []
+                    named_files[field_name].append(field_value)
 
     # Upload named field files
     for field_name, upload_files in named_files.items():

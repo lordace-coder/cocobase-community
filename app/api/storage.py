@@ -1,5 +1,5 @@
 import enum
-from fastapi import APIRouter, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from app.core.database import get_db
@@ -48,10 +48,13 @@ def delete_project_files(project_id: str, filename: str, directory: str = None):
 @router.post("/files/{project_id}")
 async def upload_project_file(
     project_id: str,
-    file: UploadFile,
+    file: UploadFile | None = File(None),
     directory: str = None,
     db: Session = Depends(get_db),
 ):
+    if not file:
+        raise HTTPException(400, "No file provided")
+
     filename = file.filename.replace(" ", "_")  # Sanitize filename
     file_content = await file.read()  # Read the content into memory
     file_size = len(file_content)

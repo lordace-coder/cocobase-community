@@ -254,32 +254,52 @@ async def create_new_document(
 
     # Parse document data
     document_data = {}
-    if data:
+
+    # Check if request is JSON (application/json)
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        # Handle JSON body
+        try:
+            body = await request.json()
+            document_data = body.get(
+                "data", body
+            )  # Support both {"data": {...}} and direct {...}
+        except Exception as e:
+            raise HTTPException(400, f"Invalid JSON in request body: {str(e)}")
+    elif data:
+        # Handle form data
         try:
             document_data = json.loads(data)
         except json.JSONDecodeError:
             raise HTTPException(400, "Invalid JSON in data field")
 
-    # Parse multipart form to get all file uploads
-    form = await request.form()
+    # Parse multipart form to get all file uploads (skip for JSON requests)
+    form = None
+    if "application/json" not in content_type:
+        try:
+            form = await request.form()
+        except Exception:
+            form = None
 
     # Separate named file fields from generic 'files' field
     named_files = {}  # {field_name: [UploadFile, ...]}
     generic_files = []  # files uploaded via 'files' field
 
-    for field_name, field_value in form.multi_items():
-        if field_name in ("data", "collection"):  # Skip non-file fields
-            continue
+    if form:
+        for field_name, field_value in form.multi_items():
+            if field_name in ("data", "collection"):  # Skip non-file fields
+                continue
 
-        if isinstance(field_value, UploadFile):
-            if field_name == "files":
-                # Generic files field
-                generic_files.append(field_value)
-            else:
-                # Named field (avatar, wallpaper, gallery, etc.)
-                if field_name not in named_files:
-                    named_files[field_name] = []
-                named_files[field_name].append(field_value)
+            if isinstance(field_value, UploadFile):
+                if field_name == "files":
+                    # Generic files field
+                    generic_files.append(field_value)
+                else:
+                    # Named field (avatar, wallpaper, gallery, etc.)
+                    if field_name not in named_files:
+                        named_files[field_name] = []
+                    named_files[field_name].append(field_value)
 
     # Try to find existing collection
     _collection = (
@@ -776,30 +796,50 @@ async def edit_document(
     try:
         # Parse update data
         update_data = {}
-        if data:
+
+        # Check if request is JSON (application/json)
+        content_type = request.headers.get("content-type", "")
+
+        if "application/json" in content_type:
+            # Handle JSON body
+            try:
+                body = await request.json()
+                update_data = body.get(
+                    "data", body
+                )  # Support both {"data": {...}} and direct {...}
+            except Exception as e:
+                raise HTTPException(400, f"Invalid JSON in request body: {str(e)}")
+        elif data:
+            # Handle form data
             try:
                 update_data = json.loads(data)
             except json.JSONDecodeError:
                 raise HTTPException(400, "Invalid JSON in data field")
 
-        # Parse multipart form to get all file uploads
-        form = await request.form()
+        # Parse multipart form to get all file uploads (skip for JSON requests)
+        form = None
+        if "application/json" not in content_type:
+            try:
+                form = await request.form()
+            except Exception:
+                form = None
 
         # Separate named file fields from generic 'files' field
         named_files = {}
         generic_files = []
 
-        for field_name, field_value in form.multi_items():
-            if field_name in ("data", "id", "document_id"):  # Skip non-file fields
-                continue
+        if form:
+            for field_name, field_value in form.multi_items():
+                if field_name in ("data", "id", "document_id"):  # Skip non-file fields
+                    continue
 
-            if isinstance(field_value, UploadFile):
-                if field_name == "files":
-                    generic_files.append(field_value)
-                else:
-                    if field_name not in named_files:
-                        named_files[field_name] = []
-                    named_files[field_name].append(field_value)
+                if isinstance(field_value, UploadFile):
+                    if field_name == "files":
+                        generic_files.append(field_value)
+                    else:
+                        if field_name not in named_files:
+                            named_files[field_name] = []
+                        named_files[field_name].append(field_value)
 
         # Upload named field files
         for field_name, upload_files in named_files.items():
@@ -945,7 +985,7 @@ def delete_document(
 
 @router.post("/file")
 async def upload_file_to_project(
-    file: UploadFile,
+    file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     directory: Optional[str] = None,
     proj: tuple[Project, User] = Depends(require_api_access),
@@ -958,6 +998,9 @@ async def upload_file_to_project(
     - ✅ Validate file size before reading
     - ✅ Added file type validation (optional)
     """
+    if not file:
+        raise HTTPException(400, "No file provided")
+
     if not file.filename:
         raise HTTPException(400, "Filename is required")
 
