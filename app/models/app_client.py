@@ -6,13 +6,13 @@ from sqlalchemy import (
     String,
     DateTime,
     Index,
-    JSON,
     Boolean,
     Table,
     UniqueConstraint,
     func,
+    JSON,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 import uuid
@@ -68,12 +68,21 @@ class AppUser(Base):
     client_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
     password: Mapped[str] = mapped_column(String, nullable=False)
-    data = Column(JSON, nullable=True, default=dict)
+    data = Column(JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     oauth_id: Mapped[str] = mapped_column(String, nullable=True, unique=True)
     roles = Column(PickleType, nullable=True, default=list)
 
-    __table_args__ = (UniqueConstraint("client_id", "email", name="uq_client_email"),)
+    __table_args__ = (
+        UniqueConstraint("client_id", "email", name="uq_client_email"),
+        Index("ix_app_users_created_at", "created_at"),
+        Index(
+            "ix_app_users_data_gin",
+            "data",
+            postgresql_using="gin",
+            postgresql_ops={"data": "jsonb_path_ops"},
+        ),
+    )
 
     def set_password(self, password: str) -> None:
         self.password = hash_password(password)

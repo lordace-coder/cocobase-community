@@ -241,7 +241,7 @@ def list_all_users(
     request: Request,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=500),  # Reduced default and max for performance
     offset: int = Query(0, ge=0),
     sort: Optional[str] = Query(
         None, description="Field to sort by (email, created_at, or data.field)"
@@ -290,7 +290,7 @@ def list_all_users(
     OPERATORS: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in, notin, isnull, array_contains
     """
     from sqlalchemy import or_, and_, desc, asc, cast, String
-    from app.api.collections.utilities import RelationshipResolver
+    from app.api.user_relationship_helper import UserRelationshipHelper
 
     project = proj[0]
 
@@ -309,6 +309,7 @@ def list_all_users(
     if filter_params:
         or_groups = {}
         and_conditions = []
+        relationship_joins = {}  # Track joins to avoid duplicates
 
         for key, value in filter_params.items():
             # Check for OR conditions
@@ -338,6 +339,34 @@ def list_all_users(
                     and_conditions.append(or_(*or_conditions))
                 continue
 
+            # Check for relationship filter (e.g., referred_by.email_eq)
+            if "." in key and not key.startswith("data.") and not key.startswith("["):
+                # Parse relationship filter
+                rel_field, rest = key.split(".", 1)
+
+                # Handle referred_by relationship
+                if rel_field == "referred_by":
+                    # Create alias for self-join if not already created
+                    if "referred_by" not in relationship_joins:
+                        from sqlalchemy.orm import aliased
+
+                        ReferrerUser = aliased(AppUser)
+                        relationship_joins["referred_by"] = ReferrerUser
+
+                        # Join on the referred_by field in data (now JSONB)
+                        query = query.outerjoin(
+                            ReferrerUser,
+                            AppUser.data["referred_by"].astext == ReferrerUser.id,
+                        )
+
+                    ReferrerUser = relationship_joins["referred_by"]
+
+                    # Build condition on the joined referrer
+                    condition = _build_appuser_condition(rest, value, ReferrerUser)
+                    if condition is not None:
+                        and_conditions.append(condition)
+                    continue
+
             # Regular AND condition
             condition = _build_appuser_condition(key, value, AppUser)
             if condition is not None:
@@ -358,8 +387,15 @@ def list_all_users(
         if and_conditions:
             query = query.filter(and_(*and_conditions))
 
-    # Get total count
-    total = query.count()
+    # Optimize COUNT: only count on first page OR if explicitly requested
+    # Skip count entirely with ?count=false for maximum speed
+    count_param = request.query_params.get("count", "auto").lower()
+    if count_param == "false":
+        total = -1  # Skip count
+    elif count_param == "true" or (count_param == "auto" and offset == 0):
+        total = query.count()
+    else:
+        total = -1  # Unknown count for pagination
 
     # Apply sorting
     if sort:
@@ -400,82 +436,8 @@ def list_all_users(
 
     # Handle relationships if populate is specified
     if populate and users_data:
-        resolver = RelationshipResolver(db, project.id)
-        for user_dict in users_data:
-            for rel_path in populate:
-                # Check if relationship field exists in data
-                if rel_path in user_dict.get("data", {}):
-                    related_value = user_dict["data"][rel_path]
-                    if related_value:
-                        # Check if it's an array (many-to-many) or single value
-                        if isinstance(related_value, list):
-                            # Handle array of IDs (followers_ids, following_ids, etc.)
-                            populated_items = []
-                            for related_id in related_value:
-                                if related_id:
-                                    # Try to populate from collections first
-                                    populated = resolver._populate_single_relationship(
-                                        rel_path, related_id, []
-                                    )
-                                    if populated:
-                                        populated_items.append(populated)
-                                    else:
-                                        # Try to populate from AppUsers
-                                        related_user = (
-                                            db.query(AppUser)
-                                            .filter(
-                                                AppUser.id == related_id,
-                                                AppUser.client_id == project.id,
-                                            )
-                                            .first()
-                                        )
-                                        if related_user:
-                                            populated_items.append(
-                                                {
-                                                    "id": related_user.id,
-                                                    "email": related_user.email,
-                                                    "data": related_user.data or {},
-                                                    "created_at": (
-                                                        related_user.created_at.isoformat()
-                                                        if related_user.created_at
-                                                        else None
-                                                    ),
-                                                }
-                                            )
-
-                            if populated_items:
-                                user_dict["data"][
-                                    f"{rel_path}_populated"
-                                ] = populated_items
-                        else:
-                            # Single relationship
-                            # Try to populate from collections first
-                            populated = resolver._populate_single_relationship(
-                                rel_path, related_value, []
-                            )
-                            if populated:
-                                user_dict["data"][f"{rel_path}_populated"] = populated
-                            else:
-                                # Try to populate from AppUsers
-                                related_user = (
-                                    db.query(AppUser)
-                                    .filter(
-                                        AppUser.id == related_value,
-                                        AppUser.client_id == project.id,
-                                    )
-                                    .first()
-                                )
-                                if related_user:
-                                    user_dict["data"][f"{rel_path}_populated"] = {
-                                        "id": related_user.id,
-                                        "email": related_user.email,
-                                        "data": related_user.data or {},
-                                        "created_at": (
-                                            related_user.created_at.isoformat()
-                                            if related_user.created_at
-                                            else None
-                                        ),
-                                    }
+        helper = UserRelationshipHelper(db, project.id)
+        users_data = helper.populate_user_relationships(users_data, populate)
 
     return {
         "data": users_data,
@@ -524,13 +486,12 @@ def _build_appuser_condition(field_with_op: str, value: str, model):
     # Check if it's a JSONB data field
     if field_name.startswith("data."):
         json_field = field_name.replace("data.", "")
+        # model.data is now JSONB, access directly
         column = model.data[json_field].astext
 
         # Special handling for array_contains (check if value is in array)
         if operator == "array_contains":
             # Check if the JSONB array contains the value
-            # Uses PostgreSQL's @> operator for JSONB containment
-            from sqlalchemy.dialects.postgresql import JSONB
             import json
 
             # Check if array contains the specific value
@@ -563,7 +524,27 @@ def _build_appuser_condition(field_with_op: str, value: str, model):
             return ~column.in_(values)
         elif operator == "isnull":
             is_null = value.lower() in ["true", "1", "yes"]
-            return column.is_(None) if is_null else column.isnot(None)
+            if is_null:
+                # Field is null: either key doesn't exist OR value is null
+                from sqlalchemy import or_
+
+                return or_(
+                    ~model.data.has_key(json_field),  # Key doesn't exist
+                    model.data[json_field].astext.is_(
+                        None
+                    ),  # Key exists but value is null
+                    model.data[json_field].astext
+                    == "null",  # Key exists with JSON null value
+                )
+            else:
+                # Field is not null: key exists AND has a non-null value
+                from sqlalchemy import and_
+
+                return and_(
+                    model.data.has_key(json_field),  # Key exists
+                    model.data[json_field].astext.isnot(None),  # Value is not null
+                    model.data[json_field].astext != "null",  # Not JSON null
+                )
 
     # Standard field (email, created_at, etc.)
     if not hasattr(model, field_name):

@@ -16,13 +16,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
+from app.api.collections.utilities import invalidate_collection_cache
 from app.core.database import get_db
 from app.core.dependencies import require_dashboard_access, get_current_user
 from app.models.app_client import Project
 from app.models.user import User
 from app.models.collections import Collection, Document
-from app.services.cache_builder import invalidate_collection_cache
-
 
 router = APIRouter(
     prefix="/migrations",

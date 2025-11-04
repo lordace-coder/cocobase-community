@@ -425,8 +425,15 @@ class AutoRelationshipResolver:
                 base_query, relationship_filters, collection
             )
 
-        # Get total count
-        total = base_query.count()
+        # Optimize COUNT: only count on first page or if explicitly requested
+        # Skip count with ?count=false for maximum speed
+        count_param = query_params.get("count", "auto").lower()
+        if count_param == "false":
+            total = -1  # Skip count
+        elif count_param == "true" or (count_param == "auto" and offset == 0):
+            total = base_query.count()
+        else:
+            total = -1  # Unknown count for pagination
 
         # Apply sorting
         sort_field = query_params.get("sort", "created_at")

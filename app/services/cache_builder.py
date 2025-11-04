@@ -1,3 +1,4 @@
+from fastapi import Request, Response
 def user_aware_key_builder(
     func,
     namespace: str = "",

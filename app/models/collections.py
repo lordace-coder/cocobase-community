@@ -21,7 +21,8 @@ class Collection(Base):
     )
 
     project = relationship(
-        "Project", back_populates="collections", 
+        "Project",
+        back_populates="collections",
     )
     documents = relationship(
         "Document",
@@ -75,4 +76,6 @@ class Document(Base):
             postgresql_using="gin",
             postgresql_ops={"data": "jsonb_ops"},
         ),
+        Index("ix_documents_created_at", "created_at"),
+        Index("ix_documents_collection_created", "collection_id", "created_at"),
     )

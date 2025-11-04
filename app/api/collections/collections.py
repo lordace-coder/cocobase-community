@@ -405,7 +405,7 @@ async def list_documents(
     request: Request,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(require_api_access),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=500),  # Reduced for performance
     offset: int = Query(0, ge=0),
     sort: Optional[str] = Query(None, description="Field to sort by"),
     order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
@@ -549,10 +549,6 @@ async def list_documents(
 
     if has_relationships:
         # Use relationship resolver for complex queries
-        print(
-            f"DEBUG: Using relationship resolver (populate={populate}, select={select})"
-        )
-
         resolver = AutoRelationshipResolver(db)
         result = resolver.query_with_relationships(
             collection=collection,
@@ -568,14 +564,9 @@ async def list_documents(
         return result["data"]
 
     # Otherwise, use your existing fast path for simple queries
-    print(f"DEBUG: Using standard query (no relationships)")
 
-    # Base query with eager loading
-    query = (
-        db.query(Document)
-        .options(joinedload(Document.collection))
-        .filter(Document.collection_id == collection.id)
-    )
+    # Base query - removed joinedload for performance (not needed for single collection)
+    query = db.query(Document).filter(Document.collection_id == collection.id)
 
     # Remove populate and select from query_params before filtering
     filtered_query_params = {
@@ -618,8 +609,6 @@ async def list_documents(
 
     # Apply pagination
     results = query.offset(offset).limit(limit).all()
-
-    print(f"DEBUG: Query returned {len(results)} documents\n")
 
     # Convert to Pydantic for consistency
     return [DocumentSchema.model_validate(doc) for doc in results]
