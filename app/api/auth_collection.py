@@ -80,7 +80,7 @@ async def create_new_user(
     # Parse user data - support both JSON body and multipart form
     user_data = {}
     content_type = request.headers.get("content-type", "")
-    
+
     if "application/json" in content_type:
         # Handle JSON request body
         try:
@@ -637,7 +637,7 @@ async def update_current_user_details(
     # Parse update data - support both JSON body and multipart form
     update_data = {}
     content_type = request.headers.get("content-type", "")
-    
+
     if "application/json" in content_type:
         # Handle JSON request body
         try:
