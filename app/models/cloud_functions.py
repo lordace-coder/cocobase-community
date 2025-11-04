@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Enum,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -43,6 +44,11 @@ class CloudFunction(Base):
     # relationships
     executions = relationship(
         "FunctionExecution", back_populates="function", cascade="all, delete-orphan"
+    )
+
+    # Ensure function names are unique within each project
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_project_function_name"),
     )
 
 
