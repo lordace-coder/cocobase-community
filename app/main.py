@@ -5,6 +5,7 @@ from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.api import (
     ai_assistant,
+    analytics,
     integrations,
     migrater,
     migrations,
@@ -50,9 +51,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-# app.add_middleware(BodySizeLimitMiddleware, max_body_size=2_000_000)  # ~1MB
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -82,6 +80,7 @@ app.include_router(cron.router)
 app.include_router(migrater.router)
 app.include_router(migrations.router)
 app.include_router(ai_assistant.router)
+app.include_router(analytics.router)
 # Add middleware
 
 
@@ -118,3 +117,4 @@ admin.add_view(ProjectSubscriptionModel)
 admin.add_view(ProjectModel)
 admin.add_view(IntegrationsModel)
 admin.add_view(ProjectIntegrationModel)
+admin.add_view(ApiUsageCounterModel)

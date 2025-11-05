@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 
 # Sync to database every N requests (configurable)
-SYNC_THRESHOLD = 100  # Sync to DB every 100 requests
+SYNC_THRESHOLD = 10  # Sync to DB every 10 requests
 REDIS_SYNC_KEY_SUFFIX = ":last_sync"
 
 # Cache plan info to avoid repeated DB queries
@@ -32,11 +32,18 @@ async def check_and_increment_api_usage(
     Optimized: Check API limit using Redis with minimal DB hits.
     Redis = fast counter, Database = source of truth
     """
+    print(
+        f"🔵 API usage check called for project: {project.id if hasattr(project, 'id') else 'unknown'}"
+    )
+
     # OPTIMIZATION 1: Cache plan lookups (plans rarely change)
     plan = _get_cached_plan(project, db)
 
     # Unlimited requests - fast exit
     if plan.max_requests_per_month is None or plan.max_requests_per_month == 0:
+        print(
+            f"⚠️ Project {project.id} has unlimited plan (max_requests={plan.max_requests_per_month}), skipping tracking"
+        )
         return True
 
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
@@ -100,6 +107,9 @@ async def check_and_increment_api_usage(
         # Set expiry on first increment
         if new_usage == 1:
             await redis_client.expire(redis_key, 60 * 60 * 24 * 60)
+            # Sync first request immediately for visibility
+            print(f"🎯 First request of the month - syncing to DB immediately")
+            bg.add_task(_sync_usage_to_db, project.id, current_month, new_usage, db)
 
         # OPTIMIZATION 5: Batch sync checks (avoid setting on every request)
         last_sync_count = 0
@@ -133,8 +143,15 @@ async def check_and_increment_api_usage(
         import traceback
 
         traceback.print_exc()
-        # Allow request through to avoid blocking legitimate traffic
-        return True
+        # FALLBACK: Try database-only mode before giving up
+        try:
+            print("🔄 Attempting database fallback...")
+            return _check_api_usage_db_only(project, db, bg, user, plan)
+        except Exception as fallback_error:
+            print(f"❌ Database fallback also failed: {fallback_error}")
+            traceback.print_exc()
+            # Last resort: allow request through to avoid blocking legitimate traffic
+            return True
 
 
 def _get_cached_plan(project, db: Session):

@@ -1,5 +1,5 @@
 from sqladmin import ModelView
-from app.models.pricing import PricingPlan, ProjectSubscription
+from app.models.pricing import ApiUsageCounter, PricingPlan, ProjectSubscription
 
 
 class PricingPlanModel(ModelView, model=PricingPlan):
@@ -8,4 +8,8 @@ class PricingPlanModel(ModelView, model=PricingPlan):
 
 
 class ProjectSubscriptionModel(ModelView, model=ProjectSubscription):
+    pass
+
+
+class ApiUsageCounterModel(ModelView, model=ApiUsageCounter):
     pass
