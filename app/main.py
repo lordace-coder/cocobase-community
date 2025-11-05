@@ -34,7 +34,7 @@ from sqladmin import Admin
 
 app = FastAPI(
     title="CocoBase API",
-    version="1.0.0",
+    version="1.2.1",
     description="Api docs for COCOBASE",
     docs_url="/_/",
     redoc_url=None,
