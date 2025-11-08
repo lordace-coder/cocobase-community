@@ -11,6 +11,7 @@ from fastapi import (
     File,
     Form,
 )
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from pydantic import BaseModel
 from sqlalchemy import cast, Integer, String, or_, and_, func
 from sqlalchemy.orm import Session, joinedload
@@ -168,140 +169,70 @@ def delete_collection(
 # ============================================
 # DOCUMENT ROUTES
 # ============================================
-
-
 @router.post("/documents", response_model=DocumentSchema)
 async def create_new_document(
     bg: BackgroundTasks,
     request: Request,
     collection: str = Query(..., description="Collection name or ID"),
-    data: str = Form(None, description="Document data as JSON string"),
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(require_api_access),
     user: AppUser = Depends(get_app_user),
 ) -> DocumentSchema:
-    """
-    Create a new document in a collection with optional file uploads.
-
-    **Three Ways to Use:**
-
-    1. **JSON Only** (no files):
-       ```bash
-       POST /collections/documents?collection=products
-       Content-Type: application/json
-
-       {
-         "data": {
-           "name": "Product 1",
-           "price": 99.99
-         }
-       }
-       ```
-
-    2. **Simple File Upload** (generic files field):
-       ```bash
-       POST /collections/documents?collection=products
-       Content-Type: multipart/form-data
-
-       data: {"name": "Product 1", "price": 99.99}
-       files: [image1.jpg, image2.jpg]
-       ```
-       Result: Files stored as `file_url` (1 file) or `file_urls` (multiple files)
-
-    3. **Named File Fields** (EASY - just name your file inputs!):
-       ```bash
-       POST /collections/documents?collection=users
-       Content-Type: multipart/form-data
-
-       data: {"name": "John Doe", "bio": "Developer"}
-       avatar: avatar.jpg
-       wallpaper: wallpaper.jpg
-       ```
-       Result: Files stored in their named fields automatically!
-       ```json
-       {
-         "name": "John Doe",
-         "bio": "Developer",
-         "avatar": "https://storage.example.com/avatar.jpg",
-         "wallpaper": "https://storage.example.com/wallpaper.jpg"
-       }
-       ```
-
-    **How Named Fields Work:**
-    - Just name your file input with the field name you want
-    - `avatar=@avatar.jpg` → stored in `avatar` field
-    - `cover=@cover.jpg` → stored in `cover` field
-    - Multiple files with same name → array (e.g., `gallery=@img1.jpg gallery=@img2.jpg`)
-    - Generic `files` input → default behavior (file_url/file_urls)
-
-    **Example cURL:**
-    ```bash
-    curl -X POST "http://localhost:8000/api/collections/documents?collection=users" \\
-      -H "x-api-key: your-key" \\
-      -F "data={\"name\":\"John\"}" \\
-      -F "avatar=@avatar.jpg" \\
-      -F "wallpaper=@cover.jpg"
-    ```
-
-    Optimized:
-    - Made collection parameter required
-    - Use helper function
-    - Better error handling
-    - Invalidate cache after creation
-    - **NEW: Simple named file fields (no complex JSON mapping!)**
-    """
     project, _ = proj
-
-    # Parse document data
     document_data = {}
 
-    # Check if request is JSON (application/json)
-    content_type = request.headers.get("content-type", "")
+    # Parse the form
+    form = await request.form()
 
-    if "application/json" in content_type:
-        # Handle JSON body
+    # Extract data field
+    if "data" in form:
         try:
-            body = await request.json()
-            document_data = body.get(
-                "data", body
-            )  # Support both {"data": {...}} and direct {...}
-        except Exception as e:
-            raise HTTPException(400, f"Invalid JSON in request body: {str(e)}")
-    elif data:
-        # Handle form data
-        try:
-            document_data = json.loads(data)
+            document_data = json.loads(form["data"])
         except json.JSONDecodeError:
             raise HTTPException(400, "Invalid JSON in data field")
 
-    # Parse multipart form to get all file uploads (skip for JSON requests)
-    form = None
-    if "application/json" not in content_type:
-        try:
-            form = await request.form()
-        except Exception:
-            form = None
+    # Process all file uploads
+    uploaded_files = {}  # {field_name: [urls]}
 
-    # Separate named file fields from generic 'files' field
-    named_files = {}  # {field_name: [UploadFile, ...]}
-    generic_files = []  # files uploaded via 'files' field
+    for field_name in form:
+        if field_name in ("data", "collection"):
+            continue
 
-    if form:
-        for field_name, field_value in form.multi_items():
-            if field_name in ("data", "collection"):  # Skip non-file fields
-                continue
+        field_value = form.get(field_name)
 
-            if isinstance(field_value, UploadFile):
-                if field_name == "files":
-                    # Generic files field
-                    generic_files.append(field_value)
-                else:
-                    # Named field (avatar, wallpaper, gallery, etc.)
-                    if field_name not in named_files:
-                        named_files[field_name] = []
-                    named_files[field_name].append(field_value)
+        # Check if it's a file
+        if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+            # Read and upload file
+            file_content = await field_value.read()
+            file_size = len(file_content)
 
-    # Try to find existing collection
+            check_storage_limit(project.id, file_size, db)
+
+            file_url = handle_file_upload(
+                file_content,
+                project.id,
+                field_value.filename,
+                subdirectory=collection,
+            )
+            print(file_url, " file url")
+
+            # Store by field name
+            if field_name not in uploaded_files:
+                uploaded_files[field_name] = []
+            uploaded_files[field_name].append(file_url)
+        else:
+            print(type(field_value), " not file")
+    # Add files to document data
+    for field_name, urls in uploaded_files.items():
+        if len(urls) == 1:
+            document_data[field_name] = urls[0]
+        else:
+            document_data[field_name] = urls
+
+    if not document_data:
+        raise HTTPException(400, "Document data or files are required")
+
+    # Find or create collection
     _collection = (
         db.query(Collection)
         .filter(
@@ -311,7 +242,6 @@ async def create_new_document(
         .first()
     )
 
-    # Create collection if it doesn't exist
     if not _collection:
         _collection = Collection(
             name=collection,
@@ -322,75 +252,9 @@ async def create_new_document(
         db.commit()
         db.refresh(_collection)
 
-    # Verify permissions
     can_access_collection(_collection, "create", user)
 
     try:
-        # Upload named field files
-        for field_name, upload_files in named_files.items():
-            uploaded_urls = []
-
-            for upload_file in upload_files:
-                if not upload_file.filename:
-                    continue
-
-                # Read file content
-                file_content = await upload_file.read()
-                file_size = len(file_content)
-
-                # Check storage limit
-                check_storage_limit(project.id, file_size, db)
-
-                # Upload file
-                file_url = handle_file_upload(
-                    file_content,
-                    project.id,
-                    upload_file.filename,
-                    subdirectory=_collection.name,
-                )
-
-                uploaded_urls.append(file_url)
-
-            # Store in document data
-            if uploaded_urls:
-                if len(uploaded_urls) == 1:
-                    document_data[field_name] = uploaded_urls[0]  # Single file
-                else:
-                    document_data[field_name] = uploaded_urls  # Multiple files (array)
-
-        # Upload generic files (default behavior)
-        if generic_files:
-            uploaded_generic_urls = []
-
-            for upload_file in generic_files:
-                if not upload_file.filename:
-                    continue
-
-                file_content = await upload_file.read()
-                file_size = len(file_content)
-
-                check_storage_limit(project.id, file_size, db)
-
-                file_url = handle_file_upload(
-                    file_content,
-                    project.id,
-                    upload_file.filename,
-                    subdirectory=_collection.name,
-                )
-
-                uploaded_generic_urls.append(file_url)
-
-            # Store with default field names
-            if uploaded_generic_urls:
-                if len(uploaded_generic_urls) == 1:
-                    document_data["file_url"] = uploaded_generic_urls[0]
-                else:
-                    document_data["file_urls"] = uploaded_generic_urls
-
-        if not document_data:
-            raise HTTPException(400, "Document data or files are required")
-
-        # Create document
         new_doc = Document(
             data=document_data,
             collection_id=_collection.id,
@@ -399,7 +263,6 @@ async def create_new_document(
         db.commit()
         db.refresh(new_doc)
 
-        # Background tasks
         if _collection.webhook_url:
             bg.add_task(handle_webhook_call, _collection.webhook_url, document_data)
 
@@ -407,7 +270,6 @@ async def create_new_document(
             notify_collection_watchers, _collection.name, new_doc, RealtimeEvent.CREATE
         )
 
-        # Invalidate cache
         bg.add_task(invalidate_collection_cache, _collection.id)
 
         return new_doc
@@ -701,7 +563,6 @@ async def edit_document(
     document_id: str,
     bg: BackgroundTasks,
     request: Request,
-    data: str = Form(None, description="Document data as JSON string"),
     proj: tuple[Project, User] = Depends(require_api_access),
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
@@ -709,39 +570,15 @@ async def edit_document(
     """
     Update a document with optional file uploads.
 
-    **Three Ways to Use:**
+    **Simple File Upload Pattern (matches create document):**
+    ```bash
+    PATCH /collections/products/documents/doc-123
+    Content-Type: multipart/form-data
 
-    1. **JSON Only** (no files):
-       ```bash
-       PATCH /collections/products/documents/doc-123
-       Content-Type: application/json
-
-       {
-         "data": {
-           "name": "Updated Product",
-           "price": 149.99
-         }
-       }
-       ```
-
-    2. **Simple File Upload** (generic files):
-       ```bash
-       PATCH /collections/products/documents/doc-123
-       Content-Type: multipart/form-data
-
-       data: {"name": "Updated Product"}
-       files: [new_image.jpg]
-       ```
-
-    3. **Named File Fields** (EASY - just name your inputs!):
-       ```bash
-       PATCH /collections/users/documents/user-123
-       Content-Type: multipart/form-data
-
-       data: {"bio": "Updated bio"}
-       avatar: new_avatar.jpg
-       ```
-       Updates only the `avatar` field, preserving other fields
+    data: {"name": "Updated Product"}
+    avatar: new_image.jpg
+    files: another_file.pdf
+    ```
 
     **How It Works:**
     - Name your file input = field name in document
@@ -767,13 +604,6 @@ async def edit_document(
       "wallpaper": "https://old-wallpaper.jpg"     # Preserved
     }
     ```
-
-    Optimizations:
-    - ✅ Use helper function
-    - ✅ Eager load collection
-    - ✅ Merge data instead of replace (safer)
-    - ✅ Invalidate cache after update
-    - **NEW: Simple named file fields (no complex JSON!)**
     """
     project = proj[0]
 
@@ -794,62 +624,30 @@ async def edit_document(
         raise HTTPException(404, "Document not found")
 
     try:
-        # Parse update data
+        # Parse the form (matches create document pattern)
+        form = await request.form()
+
+        # Extract data field
         update_data = {}
-
-        # Check if request is JSON (application/json)
-        content_type = request.headers.get("content-type", "")
-
-        if "application/json" in content_type:
-            # Handle JSON body
+        if "data" in form:
             try:
-                body = await request.json()
-                update_data = body.get(
-                    "data", body
-                )  # Support both {"data": {...}} and direct {...}
-            except Exception as e:
-                raise HTTPException(400, f"Invalid JSON in request body: {str(e)}")
-        elif data:
-            # Handle form data
-            try:
-                update_data = json.loads(data)
+                update_data = json.loads(form["data"])
             except json.JSONDecodeError:
                 raise HTTPException(400, "Invalid JSON in data field")
 
-        # Parse multipart form to get all file uploads (skip for JSON requests)
-        form = None
-        if "application/json" not in content_type:
-            try:
-                form = await request.form()
-            except Exception:
-                form = None
+        # Process all file uploads (matches create document pattern)
+        uploaded_files = {}  # {field_name: [urls]}
 
-        # Separate named file fields from generic 'files' field
-        named_files = {}
-        generic_files = []
+        for field_name in form:
+            if field_name == "data":
+                continue
 
-        if form:
-            for field_name, field_value in form.multi_items():
-                if field_name in ("data", "id", "document_id"):  # Skip non-file fields
-                    continue
+            field_value = form.get(field_name)
 
-                if isinstance(field_value, UploadFile):
-                    if field_name == "files":
-                        generic_files.append(field_value)
-                    else:
-                        if field_name not in named_files:
-                            named_files[field_name] = []
-                        named_files[field_name].append(field_value)
-
-        # Upload named field files
-        for field_name, upload_files in named_files.items():
-            uploaded_urls = []
-
-            for upload_file in upload_files:
-                if not upload_file.filename:
-                    continue
-
-                file_content = await upload_file.read()
+            # Check if it's a file
+            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                # Read and upload file
+                file_content = await field_value.read()
                 file_size = len(file_content)
 
                 check_storage_limit(project.id, file_size, db)
@@ -857,52 +655,21 @@ async def edit_document(
                 file_url = handle_file_upload(
                     file_content,
                     project.id,
-                    upload_file.filename,
+                    field_value.filename,
                     subdirectory=collection.name,
                 )
 
-                uploaded_urls.append(file_url)
+                # Store by field name
+                if field_name not in uploaded_files:
+                    uploaded_files[field_name] = []
+                uploaded_files[field_name].append(file_url)
 
-            # Update field in document
-            if uploaded_urls:
-                if len(uploaded_urls) == 1:
-                    update_data[field_name] = uploaded_urls[0]
-                else:
-                    update_data[field_name] = uploaded_urls
-
-        # Upload generic files (default behavior)
-        if generic_files:
-            uploaded_generic_urls = []
-
-            for upload_file in generic_files:
-                if not upload_file.filename:
-                    continue
-
-                file_content = await upload_file.read()
-                file_size = len(file_content)
-
-                check_storage_limit(project.id, file_size, db)
-
-                file_url = handle_file_upload(
-                    file_content,
-                    project.id,
-                    upload_file.filename,
-                    subdirectory=collection.name,
-                )
-
-                uploaded_generic_urls.append(file_url)
-
-            # Merge with existing file_urls
-            if uploaded_generic_urls:
-                if len(uploaded_generic_urls) == 1:
-                    update_data["file_url"] = uploaded_generic_urls[0]
-                else:
-                    # Append to existing file_urls array
-                    existing_data = dict(document.data) if document.data else {}
-                    existing_urls = existing_data.get("file_urls", [])
-                    if not isinstance(existing_urls, list):
-                        existing_urls = []
-                    update_data["file_urls"] = existing_urls + uploaded_generic_urls
+        # Add files to update data
+        for field_name, urls in uploaded_files.items():
+            if len(urls) == 1:
+                update_data[field_name] = urls[0]
+            else:
+                update_data[field_name] = urls
 
         if not update_data:
             raise HTTPException(400, "No data or files provided for update")

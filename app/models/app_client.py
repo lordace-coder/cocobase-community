@@ -12,7 +12,7 @@ from sqlalchemy import (
     func,
     JSON,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID, JSONB,ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 import uuid
@@ -71,7 +71,7 @@ class AppUser(Base):
     data = Column(JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     oauth_id: Mapped[str] = mapped_column(String, nullable=True, unique=True)
-    roles = Column(PickleType, nullable=True, default=list)
+    roles = Column(ARRAY(String),  default=list,server_default="{}")
 
     __table_args__ = (
         UniqueConstraint("client_id", "email", name="uq_client_email"),

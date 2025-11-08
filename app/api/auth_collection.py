@@ -11,6 +11,7 @@ from fastapi import (
     File,
     Form,
 )
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -102,79 +103,42 @@ async def create_new_user(
     if "multipart/form-data" in content_type:
         form = await request.form()
 
-    # Separate named file fields from generic 'files' field
-    named_files = {}
-    generic_files = []
+    # Process all file uploads (simplified pattern)
+    uploaded_files = {}  # {field_name: [urls]}
 
     if form:
-        for field_name, field_value in form.multi_items():
-            if field_name in ("data",):  # Skip non-file fields
+        for field_name in form:
+            if field_name in ("data",):
                 continue
 
-            if isinstance(field_value, UploadFile):
-                if field_name == "files":
-                    generic_files.append(field_value)
-                else:
-                    if field_name not in named_files:
-                        named_files[field_name] = []
-                    named_files[field_name].append(field_value)
+            field_value = form.get(field_name)
 
-    # Upload named field files
-    for field_name, upload_files in named_files.items():
-        uploaded_urls = []
+            # Check if it's a file
+            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                # Read and upload file
+                file_content = await field_value.read()
+                file_size = len(file_content)
 
-        for upload_file in upload_files:
-            if not upload_file.filename:
-                continue
+                check_storage_limit(project.id, file_size, db)
 
-            file_content = await upload_file.read()
-            file_size = len(file_content)
+                file_url = handle_file_upload(
+                    file_content,
+                    project.id,
+                    field_value.filename,
+                    subdirectory="users",
+                )
 
-            check_storage_limit(project.id, file_size, db)
+                # Store by field name
+                if field_name not in uploaded_files:
+                    uploaded_files[field_name] = []
+                uploaded_files[field_name].append(file_url)
 
-            file_url = handle_file_upload(
-                file_content,
-                project.id,
-                upload_file.filename,
-                subdirectory="users",
-            )
-
-            uploaded_urls.append(file_url)
-
-        # Store in user data
-        if uploaded_urls:
-            if len(uploaded_urls) == 1:
-                user_data[field_name] = uploaded_urls[0]
-            else:
-                user_data[field_name] = uploaded_urls
-
-    # Upload generic files (default behavior)
-    if generic_files:
-        uploaded_generic_urls = []
-
-        for upload_file in generic_files:
-            if not upload_file.filename:
-                continue
-
-            file_content = await upload_file.read()
-            file_size = len(file_content)
-
-            check_storage_limit(project.id, file_size, db)
-
-            file_url = handle_file_upload(
-                file_content,
-                project.id,
-                upload_file.filename,
-                subdirectory="users",
-            )
-
-            uploaded_generic_urls.append(file_url)
-
-        if uploaded_generic_urls:
-            if len(uploaded_generic_urls) == 1:
-                user_data["file_url"] = uploaded_generic_urls[0]
-            else:
-                user_data["file_urls"] = uploaded_generic_urls
+    # Add files to user data
+    for field_name, urls in uploaded_files.items():
+        if len(urls) == 1:
+            user_data[field_name] = urls[0]
+        else:
+            user_data[field_name] = urls
 
     # check if limit has been reached
     plan = get_current_plan(project, db)
@@ -656,79 +620,42 @@ async def update_current_user_details(
     if "multipart/form-data" in content_type:
         form = await request.form()
 
-    # Separate named file fields from generic 'files' field
-    named_files = {}
-    generic_files = []
+    # Process all file uploads (simplified pattern)
+    uploaded_files = {}  # {field_name: [urls]}
 
     if form:
-        for field_name, field_value in form.multi_items():
-            if field_name in ("data",):  # Skip non-file fields
+        for field_name in form:
+            if field_name in ("data",):
                 continue
 
-            if isinstance(field_value, UploadFile):
-                if field_name == "files":
-                    generic_files.append(field_value)
-                else:
-                    if field_name not in named_files:
-                        named_files[field_name] = []
-                    named_files[field_name].append(field_value)
+            field_value = form.get(field_name)
 
-    # Upload named field files
-    for field_name, upload_files in named_files.items():
-        uploaded_urls = []
+            # Check if it's a file
+            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                # Read and upload file
+                file_content = await field_value.read()
+                file_size = len(file_content)
 
-        for upload_file in upload_files:
-            if not upload_file.filename:
-                continue
+                check_storage_limit(project.id, file_size, db)
 
-            file_content = await upload_file.read()
-            file_size = len(file_content)
+                file_url = handle_file_upload(
+                    file_content,
+                    project.id,
+                    field_value.filename,
+                    subdirectory="users",
+                )
 
-            check_storage_limit(project.id, file_size, db)
+                # Store by field name
+                if field_name not in uploaded_files:
+                    uploaded_files[field_name] = []
+                uploaded_files[field_name].append(file_url)
 
-            file_url = handle_file_upload(
-                file_content,
-                project.id,
-                upload_file.filename,
-                subdirectory="users",
-            )
-
-            uploaded_urls.append(file_url)
-
-        # Update field in user
-        if uploaded_urls:
-            if len(uploaded_urls) == 1:
-                update_data[field_name] = uploaded_urls[0]
-            else:
-                update_data[field_name] = uploaded_urls
-
-    # Upload generic files (default behavior)
-    if generic_files:
-        uploaded_generic_urls = []
-
-        for upload_file in generic_files:
-            if not upload_file.filename:
-                continue
-
-            file_content = await upload_file.read()
-            file_size = len(file_content)
-
-            check_storage_limit(project.id, file_size, db)
-
-            file_url = handle_file_upload(
-                file_content,
-                project.id,
-                upload_file.filename,
-                subdirectory="users",
-            )
-
-            uploaded_generic_urls.append(file_url)
-
-        if uploaded_generic_urls:
-            if len(uploaded_generic_urls) == 1:
-                update_data["file_url"] = uploaded_generic_urls[0]
-            else:
-                update_data["file_urls"] = uploaded_generic_urls
+    # Add files to update data
+    for field_name, urls in uploaded_files.items():
+        if len(urls) == 1:
+            update_data[field_name] = urls[0]
+        else:
+            update_data[field_name] = urls
 
     # Update user fields
     if update_data:
