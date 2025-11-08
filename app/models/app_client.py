@@ -1,6 +1,5 @@
 from datetime import datetime
 from sqlalchemy import (
-    PickleType,
     Column,
     ForeignKey,
     String,
@@ -37,7 +36,7 @@ class Project(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     api_key = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
-    allowed_origins = Column(PickleType, nullable=True)
+    allowed_origins = Column(ARRAY(String),  default=list,server_default="{}")
     callback_url = Column(String, nullable=True)
     configs = Column(JSON, default=dict)
     integrations = relationship("ProjectIntegration", back_populates="project")
