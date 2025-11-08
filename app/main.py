@@ -32,17 +32,25 @@ from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
 
+# Main app - Public API with collections and auth-collections at root
 app = FastAPI(
-    title="CocoBase API",
+    title="CocoBase Public API",
     version="1.2.1",
-    description="Api docs for COCOBASE",
-    docs_url="/_/",
-    redoc_url=None,
+    description="Public API documentation for CocoBase Collections and Authentication",
+    docs_url="/docs",  # Public docs
+    redoc_url="/redoc",
+)
+
+# Dashboard/Admin API - separate docs (not used, just for creating openapi schema)
+dashboard_app = FastAPI(
+    title="CocoBase Dashboard API",
+    version="1.2.1",
+    description="Complete API docs for COCOBASE Dashboard and Admin",
 )
 
 admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
 
-# Configure CORS
+# Configure CORS for main app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,14 +72,17 @@ async def shutdown_event():
     print("Redis closed!")
 
 
-# Include routers
-app.include_router(user.router, tags=["Authentication"])
+# Include public routes to main app (shown in public docs)
 app.include_router(collections.router)
+app.include_router(auth_collection.router)
+
+# Include dashboard routes to main app (functional, NOT in public docs)
+# We'll manually exclude these from the OpenAPI schema
+app.include_router(user.router, tags=["Authentication"])
 app.include_router(project.router)
 app.include_router(api.router)
 app.include_router(integrations.router)
 app.include_router(documents.router)
-app.include_router(auth_collection.router)
 app.include_router(payments.router)
 app.include_router(coco_hooks.router)
 app.include_router(collaborations.router)
@@ -81,9 +92,84 @@ app.include_router(migrater.router)
 app.include_router(migrations.router)
 app.include_router(ai_assistant.router)
 app.include_router(analytics.router)
+
+# Create dashboard docs with all routes (for /_/docs)
+dashboard_app.include_router(user.router, tags=["Authentication"])
+dashboard_app.include_router(collections.router)
+dashboard_app.include_router(auth_collection.router)
+dashboard_app.include_router(project.router)
+dashboard_app.include_router(api.router)
+dashboard_app.include_router(integrations.router)
+dashboard_app.include_router(documents.router)
+dashboard_app.include_router(payments.router)
+dashboard_app.include_router(coco_hooks.router)
+dashboard_app.include_router(collaborations.router)
+dashboard_app.include_router(storage.router)
+dashboard_app.include_router(cron.router)
+dashboard_app.include_router(migrater.router)
+dashboard_app.include_router(migrations.router)
+dashboard_app.include_router(ai_assistant.router)
+dashboard_app.include_router(analytics.router)
+
+
+# Override OpenAPI schema for main app to only show public routes
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    # Get the full schema
+    from fastapi.openapi.utils import get_openapi
+
+    openapi_schema = get_openapi(
+        title="CocoBase Public API",
+        version="1.2.1",
+        description="Public API documentation for CocoBase Collections and Authentication",
+        routes=app.routes,
+    )
+
+    # Filter paths to only include /collections and /auth-collections
+    filtered_paths = {}
+    for path, path_item in openapi_schema["paths"].items():
+        if path.startswith("/collections") or path.startswith("/auth-collections"):
+            filtered_paths[path] = path_item
+
+    openapi_schema["paths"] = filtered_paths
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+# Serve dashboard docs at /_/
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.responses import HTMLResponse
+
+
+@app.get("/_/docs", include_in_schema=False)
+async def dashboard_swagger_ui():
+    return get_swagger_ui_html(
+        openapi_url="/_/openapi.json",
+        title="CocoBase Dashboard API - Swagger UI",
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
+
+
+@app.get("/_/redoc", include_in_schema=False)
+async def dashboard_redoc():
+    return get_redoc_html(
+        openapi_url="/_/openapi.json",
+        title="CocoBase Dashboard API - ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js",
+    )
+
+
+@app.get("/_/openapi.json", include_in_schema=False)
+async def dashboard_openapi():
+    return dashboard_app.openapi()
+
+
 # Add middleware
-
-
 class FullErrorMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
