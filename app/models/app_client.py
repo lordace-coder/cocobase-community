@@ -36,7 +36,7 @@ class Project(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     api_key = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
-    allowed_origins = Column(ARRAY(String),  default=list,server_default="{}")
+    allowed_origins = Column(ARRAY(String), default=lambda: [], server_default="{}")
     callback_url = Column(String, nullable=True)
     configs = Column(JSON, default=dict)
     integrations = relationship("ProjectIntegration", back_populates="project")
@@ -70,7 +70,7 @@ class AppUser(Base):
     data = Column(JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     oauth_id: Mapped[str] = mapped_column(String, nullable=True, unique=True)
-    roles = Column(ARRAY(String),  default=list,server_default="{}")
+    roles = Column(ARRAY(String), default=lambda: [], server_default="{}")
 
     __table_args__ = (
         UniqueConstraint("client_id", "email", name="uq_client_email"),
