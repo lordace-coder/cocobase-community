@@ -183,14 +183,16 @@ async def create_new_document(
 
     # Parse the form
     form = await request.form()
-
+    json_data = await request.json()
+    print(form, "form ", json_data, "json")
     # Extract data field
     if "data" in form:
         try:
             document_data = json.loads(form["data"])
         except json.JSONDecodeError:
             raise HTTPException(400, "Invalid JSON in data field")
-
+    else:
+        document_data = json_data.get("data", json_data)
     # Process all file uploads
     uploaded_files = {}  # {field_name: [urls]}
 
@@ -626,7 +628,7 @@ async def edit_document(
     try:
         # Parse the form (matches create document pattern)
         form = await request.form()
-
+        json_data = await request.json()
         # Extract data field
         update_data = {}
         if "data" in form:
@@ -634,7 +636,9 @@ async def edit_document(
                 update_data = json.loads(form["data"])
             except json.JSONDecodeError:
                 raise HTTPException(400, "Invalid JSON in data field")
-
+        else:
+            update_data = json_data.get("data", json_data)
+            
         # Process all file uploads (matches create document pattern)
         uploaded_files = {}  # {field_name: [urls]}
 

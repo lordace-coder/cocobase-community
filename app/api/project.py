@@ -489,6 +489,34 @@ def delete_document_in_collection(
     return {"message": "Document deleted successfully"}
 
 
+@router.delete("/{id}/collections/{collection_id}/documents")
+def delete_multiple_documents_in_collection(
+    id: str,
+    collection_id: str,
+    document_ids: list[str] = Query(..., description="List of document IDs to delete"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Optimized: Use helper functions and bulk delete."""
+    project = get_project_with_access(id, user, db)
+    collection = get_collection_with_access(collection_id, project, db)
+
+    result = (
+        db.query(Document)
+        .filter(
+            Document.id.in_(document_ids),
+            Document.collection_id == collection.id,
+        )
+        .delete(synchronize_session=False)
+    )
+
+    if result == 0:
+        raise HTTPException(404, "No documents found to delete")
+
+    db.commit()
+    return {"message": f"Deleted {result} documents successfully"}
+
+
 @router.patch("/{id}/collections/{collection_id}/documents/{document_id}")
 def update_document_in_collection(
     id: str,
