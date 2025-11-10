@@ -181,55 +181,62 @@ async def create_new_document(
     project, _ = proj
     document_data = {}
 
-    # Parse the form
-    form = await request.form()
-    json_data = await request.json()
-    print(form, "form ", json_data, "json")
-    # Extract data field
-    if "data" in form:
-        try:
-            document_data = json.loads(form["data"])
-        except json.JSONDecodeError:
-            raise HTTPException(400, "Invalid JSON in data field")
+    # Check content type to determine how to parse the request
+    content_type = request.headers.get("content-type", "")
+
+    if "multipart/form-data" in content_type:
+        # Handle form data with potential file uploads
+        form = await request.form()
+
+        # Extract data field
+        if "data" in form:
+            try:
+                document_data = json.loads(form["data"])
+            except json.JSONDecodeError:
+                raise HTTPException(400, "Invalid JSON in data field")
+
+        # Process all file uploads
+        uploaded_files = {}  # {field_name: [urls]}
+
+        for field_name in form:
+            if field_name in ("data", "collection"):
+                continue
+
+            field_value = form.get(field_name)
+
+            # Check if it's a file
+            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                # Read and upload file
+                file_content = await field_value.read()
+                file_size = len(file_content)
+
+                check_storage_limit(project.id, file_size, db)
+
+                file_url = handle_file_upload(
+                    file_content,
+                    project.id,
+                    field_value.filename,
+                    subdirectory=collection,
+                )
+                print(file_url, " file url")
+
+                # Store by field name
+                if field_name not in uploaded_files:
+                    uploaded_files[field_name] = []
+                uploaded_files[field_name].append(file_url)
+            else:
+                print(type(field_value), " not file")
+
+        # Add files to document data
+        for field_name, urls in uploaded_files.items():
+            if len(urls) == 1:
+                document_data[field_name] = urls[0]
+            else:
+                document_data[field_name] = urls
     else:
+        # Handle JSON request
+        json_data = await request.json()
         document_data = json_data.get("data", json_data)
-    # Process all file uploads
-    uploaded_files = {}  # {field_name: [urls]}
-
-    for field_name in form:
-        if field_name in ("data", "collection"):
-            continue
-
-        field_value = form.get(field_name)
-
-        # Check if it's a file
-        if isinstance(field_value, StarletteUploadFile) and field_value.filename:
-            # Read and upload file
-            file_content = await field_value.read()
-            file_size = len(file_content)
-
-            check_storage_limit(project.id, file_size, db)
-
-            file_url = handle_file_upload(
-                file_content,
-                project.id,
-                field_value.filename,
-                subdirectory=collection,
-            )
-            print(file_url, " file url")
-
-            # Store by field name
-            if field_name not in uploaded_files:
-                uploaded_files[field_name] = []
-            uploaded_files[field_name].append(file_url)
-        else:
-            print(type(field_value), " not file")
-    # Add files to document data
-    for field_name, urls in uploaded_files.items():
-        if len(urls) == 1:
-            document_data[field_name] = urls[0]
-        else:
-            document_data[field_name] = urls
 
     if not document_data:
         raise HTTPException(400, "Document data or files are required")
@@ -626,54 +633,60 @@ async def edit_document(
         raise HTTPException(404, "Document not found")
 
     try:
-        # Parse the form (matches create document pattern)
-        form = await request.form()
-        json_data = await request.json()
-        # Extract data field
+        # Check content type to determine how to parse the request
+        content_type = request.headers.get("content-type", "")
         update_data = {}
-        if "data" in form:
-            try:
-                update_data = json.loads(form["data"])
-            except json.JSONDecodeError:
-                raise HTTPException(400, "Invalid JSON in data field")
+
+        if "multipart/form-data" in content_type:
+            # Handle form data with potential file uploads
+            form = await request.form()
+
+            # Extract data field
+            if "data" in form:
+                try:
+                    update_data = json.loads(form["data"])
+                except json.JSONDecodeError:
+                    raise HTTPException(400, "Invalid JSON in data field")
+
+            # Process all file uploads (matches create document pattern)
+            uploaded_files = {}  # {field_name: [urls]}
+
+            for field_name in form:
+                if field_name == "data":
+                    continue
+
+                field_value = form.get(field_name)
+
+                # Check if it's a file
+                if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                    # Read and upload file
+                    file_content = await field_value.read()
+                    file_size = len(file_content)
+
+                    check_storage_limit(project.id, file_size, db)
+
+                    file_url = handle_file_upload(
+                        file_content,
+                        project.id,
+                        field_value.filename,
+                        subdirectory=collection.name,
+                    )
+
+                    # Store by field name
+                    if field_name not in uploaded_files:
+                        uploaded_files[field_name] = []
+                    uploaded_files[field_name].append(file_url)
+
+            # Add files to update data
+            for field_name, urls in uploaded_files.items():
+                if len(urls) == 1:
+                    update_data[field_name] = urls[0]
+                else:
+                    update_data[field_name] = urls
         else:
+            # Handle JSON request
+            json_data = await request.json()
             update_data = json_data.get("data", json_data)
-            
-        # Process all file uploads (matches create document pattern)
-        uploaded_files = {}  # {field_name: [urls]}
-
-        for field_name in form:
-            if field_name == "data":
-                continue
-
-            field_value = form.get(field_name)
-
-            # Check if it's a file
-            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
-                # Read and upload file
-                file_content = await field_value.read()
-                file_size = len(file_content)
-
-                check_storage_limit(project.id, file_size, db)
-
-                file_url = handle_file_upload(
-                    file_content,
-                    project.id,
-                    field_value.filename,
-                    subdirectory=collection.name,
-                )
-
-                # Store by field name
-                if field_name not in uploaded_files:
-                    uploaded_files[field_name] = []
-                uploaded_files[field_name].append(file_url)
-
-        # Add files to update data
-        for field_name, urls in uploaded_files.items():
-            if len(urls) == 1:
-                update_data[field_name] = urls[0]
-            else:
-                update_data[field_name] = urls
 
         if not update_data:
             raise HTTPException(400, "No data or files provided for update")
