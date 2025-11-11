@@ -25,6 +25,7 @@ from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
 from app.core.database import engine, get_db
 from app.core.sequence_manager import check_sequences_on_startup
+from app.core.scheduler import start_scheduler, stop_scheduler
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 import traceback
@@ -79,11 +80,27 @@ async def startup_event():
         # Don't fail startup if sequence check fails
         pass
 
+    # Start background scheduler for cron jobs
+    try:
+        start_scheduler()
+        logger.info("Background scheduler started")
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {e}")
+        # Don't fail startup if scheduler fails
+        pass
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await close_redis()
     print("Redis closed!")
+
+    # Stop background scheduler
+    try:
+        stop_scheduler()
+        logger.info("Background scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}")
 
 
 # Include public routes to main app (shown in public docs)
