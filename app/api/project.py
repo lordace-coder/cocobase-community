@@ -12,9 +12,17 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
-from app.schemas.auth_collection import AppUserSchema, AppUserResponse, AppUserUpdateSchema
+from app.schemas.auth_collection import (
+    AppUserSchema,
+    AppUserResponse,
+    AppUserUpdateSchema,
+)
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_project_with_access, verify_project_access
+from app.core.dependencies import (
+    get_current_user,
+    get_project_with_access,
+    verify_project_access,
+)
 from app.core.middleware import track_api_call
 from app.models.collections import Collection, Document
 from app.models.pricing import get_current_plan
@@ -72,20 +80,19 @@ def user_aware_key_builder(
 # REQUEST SCHEMAS
 # ============================================
 
+
 class DeleteItemsRequest(BaseModel):
     """Schema for bulk delete operations."""
+
     ids: list[str] = Field(..., description="List of IDs to delete", min_length=1)
 
-    model_config = {"json_schema_extra": {
-        "example": {
-            "ids": ["id1", "id2", "id3"]
-        }
-    }}
+    model_config = {"json_schema_extra": {"example": {"ids": ["id1", "id2", "id3"]}}}
 
 
 # ============================================
 # HELPER FUNCTIONS (DRY Principle)
 # ============================================
+
 
 def get_collection_with_access(
     collection_id: str, project: Project, db: Session
@@ -348,6 +355,10 @@ def get_collections_in_project(
         )
         .first()
     )
+
+    # Order collections by name (case-insensitive) if present
+    if project and project.collections:
+        project.collections.sort(key=lambda c: (c.name or "").lower())
 
     if not project:
         raise HTTPException(404, "Project not found")
@@ -675,36 +686,32 @@ def create_user(
     """Optimized: Use helper function and exists() check."""
     project = get_project_with_access(id, user, db)
     plan = get_current_plan(project, db)
-    
+
     # Check if user limit has been reached
     # max_users = 0 or None means unlimited users
     if plan.max_users is not None and plan.max_users > 0:
-        current_user_count = db.query(func.count(AppUser.id)).filter(
-            AppUser.client_id == project.id
-        ).scalar()
-        
+        current_user_count = (
+            db.query(func.count(AppUser.id))
+            .filter(AppUser.client_id == project.id)
+            .scalar()
+        )
+
         # Hard limit - deactivate project
         if current_user_count >= plan.max_users:
             project.is_active = False
             db.commit()
-            
+
             # Notify user in background
-            bg.add_task(
-                notify_limit_reached, 
-                user, 
-                project, 
-                "users", 
-                plan.max_users
-            )
-            
+            bg.add_task(notify_limit_reached, user, project, "users", plan.max_users)
+
             raise HTTPException(
                 status_code=403,
-                detail=f"User limit reached ({plan.max_users}). Project has been deactivated. Please upgrade your plan."
+                detail=f"User limit reached ({plan.max_users}). Project has been deactivated. Please upgrade your plan.",
             )
-        
+
         # Soft limit - warning at 80% and 90%
         usage_percentage = (current_user_count / plan.max_users) * 100
-        
+
         if usage_percentage >= 90:
             bg.add_task(
                 notify_limit_warning,
@@ -713,7 +720,7 @@ def create_user(
                 "users",
                 current_user_count,
                 plan.max_users,
-                "critical"  # 90%+ is critical
+                "critical",  # 90%+ is critical
             )
         elif usage_percentage >= 80:
             bg.add_task(
@@ -723,25 +730,25 @@ def create_user(
                 "users",
                 current_user_count,
                 plan.max_users,
-                "warning"  # 80-89% is warning
+                "warning",  # 80-89% is warning
             )
-    
+
     # Optimized existence check
     exists = db.query(
         db.query(AppUser)
         .filter(AppUser.client_id == project.id, AppUser.email == payload.email)
         .exists()
     ).scalar()
-    
+
     if exists:
         raise HTTPException(400, "User with this email already exists")
-    
+
     app_user = AppUser(**payload.model_dump(), client_id=project.id)
     app_user.set_password(payload.password)
     db.add(app_user)
     db.commit()
     db.refresh(app_user)
-    
+
     return app_user
 
 
@@ -809,7 +816,8 @@ def delete_multiple_users(
         raise HTTPException(404, "No app users found to delete")
     db.commit()
     return {"message": f"Deleted {result} users successfully"}
-    
+
+
 # ============================================
 # COLLECTION PERMISSIONS & CONFIG
 # ============================================
