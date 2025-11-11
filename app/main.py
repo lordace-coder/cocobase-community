@@ -23,7 +23,8 @@ from app.api.collections import collections
 from app.cron import cron
 from app.services.redis_worker import close_redis, init_redis
 from app.websockets import documents
-from app.core.database import engine
+from app.core.database import engine, get_db
+from app.core.sequence_manager import check_sequences_on_startup
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 import traceback
@@ -31,6 +32,9 @@ from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Main app - Public API with collections and auth-collections at root
 app = FastAPI(
@@ -64,6 +68,16 @@ app.add_middleware(
 async def startup_event():
     await init_redis()
     print("Redis connected!")
+
+    # Check and fix database sequences to prevent duplicate key errors
+    try:
+        db = next(get_db())
+        check_sequences_on_startup(db)
+        db.close()
+    except Exception as e:
+        logger.error(f"Error checking sequences on startup: {e}")
+        # Don't fail startup if sequence check fails
+        pass
 
 
 @app.on_event("shutdown")

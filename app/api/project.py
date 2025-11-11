@@ -6,9 +6,10 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Body,
     Response,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 from app.schemas.auth_collection import AppUserSchema, AppUserResponse, AppUserUpdateSchema
@@ -65,6 +66,21 @@ def user_aware_key_builder(
     if user:
         return f"{base_key}:user:{user.id}"
     return base_key
+
+
+# ============================================
+# REQUEST SCHEMAS
+# ============================================
+
+class DeleteItemsRequest(BaseModel):
+    """Schema for bulk delete operations."""
+    ids: list[str] = Field(..., description="List of IDs to delete", min_length=1)
+
+    model_config = {"json_schema_extra": {
+        "example": {
+            "ids": ["id1", "id2", "id3"]
+        }
+    }}
 
 
 # ============================================
@@ -493,18 +509,22 @@ def delete_document_in_collection(
 def delete_multiple_documents_in_collection(
     id: str,
     collection_id: str,
-    document_ids: list[str] = Query(..., description="List of document IDs to delete"),
+    payload: DeleteItemsRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Optimized: Use helper functions and bulk delete."""
+    """
+    Bulk delete multiple documents from a collection.
+
+    Provide a list of document IDs in the request body to delete them all at once.
+    """
     project = get_project_with_access(id, user, db)
     collection = get_collection_with_access(collection_id, project, db)
 
     result = (
         db.query(Document)
         .filter(
-            Document.id.in_(document_ids),
+            Document.id.in_(payload.ids),
             Document.collection_id == collection.id,
         )
         .delete(synchronize_session=False)
@@ -767,6 +787,29 @@ def delete_user(
     return {"message": "User deleted successfully"}
 
 
+@router.delete("/{project_id}/users")
+def delete_multiple_users(
+    project_id: str,
+    payload: DeleteItemsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Bulk delete multiple app users from a project.
+
+    Provide a list of user IDs in the request body to delete them all at once.
+    """
+    project = get_project_with_access(project_id, user, db)
+    result = (
+        db.query(AppUser)
+        .filter(AppUser.id.in_(payload.ids), AppUser.client_id == project.id)
+        .delete(synchronize_session=False)
+    )
+    if result == 0:
+        raise HTTPException(404, "No app users found to delete")
+    db.commit()
+    return {"message": f"Deleted {result} users successfully"}
+    
 # ============================================
 # COLLECTION PERMISSIONS & CONFIG
 # ============================================
