@@ -1,29 +1,37 @@
 # COCOBASE CLOUD FUNCTIONS BOT - AI Assistant for Writing CocoBase Cloud Functions
-from google import genai
-from google.genai import types
-from app.services.ai_assistant.utils import (
-    create_cloud_function,
-    delete_cloud_function,
-    get_cloud_function,
-    list_cloud_functions,
-    update_cloud_function,
-)
 import os
+from typing import Optional
+from openai import OpenAI
+import hashlib
 
 
 # Load documentation files
 def load_documentation():
-    """Load all documentation files from the cloud_function_documentation folder"""
+    """Load essential documentation files from the cloud_function_docs folder"""
     docs = []
-    doc_folder = "cloud_function_documentation"
+    doc_folder = "cloud_function_docs"
+
+    # Only load essential docs to reduce token usage
+    # Priority: most important for code generation
+    essential_docs = [
+        "quick-reference.md",      # Concise API reference
+        "database-api.md",         # Database operations
+        "README.md",               # Overview
+    ]
 
     if os.path.exists(doc_folder):
-        for filename in os.listdir(doc_folder):
-            if filename.endswith(".md"):
-                filepath = os.path.join(doc_folder, filename)
-                with open(filepath, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    docs.append(f"## {filename}\n\n{content}")
+        for filename in essential_docs:
+            filepath = os.path.join(doc_folder, filename)
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        # Limit each doc to first 3000 chars (most important info)
+                        if len(content) > 3000:
+                            content = content[:3000] + "\n\n[... truncated for brevity ...]"
+                        docs.append(f"## {filename}\n\n{content}")
+                except Exception as e:
+                    print(f"Warning: Could not load {filename}: {e}")
 
     return "\n\n---\n\n".join(docs)
 
@@ -31,87 +39,221 @@ def load_documentation():
 # Load the documentation
 documentation = load_documentation()
 
+# Cache documentation hash to track changes
+doc_hash = hashlib.md5(documentation.encode()).hexdigest()[:8]
+
 # System prompt that defines the bot's role and provides context
-SYSTEM_PROMPT = f"""You are CocoBase Bot, an expert AI assistant specialized in writing CocoBase Cloud Functions. 
+SYSTEM_PROMPT = f"""You are CocoBase Bot, expert at writing CocoBase Cloud Functions.
 
-Your role is to help developers write, debug, and optimize Python cloud functions for the CocoBase platform.
-
-DOCUMENTATION KNOWLEDGE:
+DOCUMENTATION:
 {documentation}
 
-KEY CAPABILITIES:
-- Write cloud functions following CocoBase best practices
-- Help with database operations (db.create_document, db.query_documents, etc.)
-- Handle request/response patterns correctly
-- Use proper error handling and validation
-- Provide security-conscious code
-- Use available built-in libraries (json, datetime, math, re)
+CRITICAL RULES:
+1. NEVER write import statements - all libraries are pre-imported
+2. All functions MUST have main() that returns dict
+3. Use 'db' object for database operations (auto-scoped to project)
+4. Get request data: request.json() or request.get()
+5. 20s timeout - optimize performance
+6. NO external network calls allowed
+7. Always use try/except for errors
+8. Return JSON-serializable data only
 
-IMPORTANT GUIDELINES:
-1. All functions should have a main() function that returns structured data
-2. Always use the 'db' object for database operations (automatically scoped to project)
-3. Access request data via 'request.json()' or 'request.get()'
-4. Functions timeout after 20 seconds - keep operations efficient
-5. No external network access - work with local database only
-6. Always handle errors gracefully with try/except blocks
-7. Return JSON-serializable responses
+PRE-IMPORTED LIBRARIES (no imports needed):
+- json (JSON operations)
+- datetime (date/time handling)
+- math (mathematical operations)
+- re (regex patterns)
+- uuid (UUID generation)
+- hashlib (hashing: md5, sha256, etc)
+- db (database: query, create_document, update_document, delete_document)
+- request (HTTP request data)
 
-PROACTIVE BEHAVIOR - TAKE INITIATIVE:
-- When a user asks to create a function, CREATE IT IMMEDIATELY with sensible defaults
-- Don't ask unnecessary clarifying questions - make reasonable assumptions
-- If the user says "list users", assume they want ALL user data (id, name, email, etc.)
-- If the user says "create a user", assume basic fields (name, email, created_at)
-- Include common fields by default (id, created_at, updated_at)
-- Add pagination by default for list operations (limit=100, offset=0)
-- Include error handling automatically
-- Only ask for clarification if the request is genuinely ambiguous
+GENERATE:
+- Production-ready code WITHOUT imports
+- Error handling (try/except)
+- Pagination (limit=100, offset=0) for lists
+- Sensible defaults
 
-EXAMPLES OF PROACTIVE RESPONSES:
-❌ BAD: "What fields should I include?"
-✅ GOOD: Create the function with all common fields immediately
+EDIT:
+- Preserve logic unless asked
+- Remove any import statements
+- Optimize performance
 
-❌ BAD: "Do you want filtering?"
-✅ GOOD: Include basic filtering capabilities by default
-
-❌ BAD: "Where is the data stored?"
-✅ GOOD: Assume standard collection names (users, posts, products, etc.)
-
-When helping users:
-- BE DECISIVE - Make smart assumptions and create working code immediately
-- Provide complete, production-ready code with error handling
-- Briefly explain what you created and offer to modify if needed
-- Suggest improvements AFTER creating, not before
-- Use sensible defaults from CocoBase best practices
-
-You have direct access to cloud function management tools - use them proactively to create, update, list, and delete functions based on user requests."""
-
-client = genai.Client()
-config = types.GenerateContentConfig(
-    tools=[
-        create_cloud_function,
-        delete_cloud_function,
-        get_cloud_function,
-        list_cloud_functions,
-        update_cloud_function,
-    ],
-    system_instruction=SYSTEM_PROMPT,
-    temperature=0.7,
-)
+OUTPUT:
+- Code in python block (NO IMPORTS)
+- Brief explanation
+- Usage notes"""
 
 
-# Chat history to maintain context
-# chat_history = []
-# chat_history.append({"role": "user", "parts": [{"text": user_input}]})
+def ask_question(
+    user_question: str,
+    project_id: Optional[str] = None
+) -> dict:
+    """
+    Answer questions about CocoBase cloud functions without generating code.
 
-# response = client.models.generate_content(
-#     model="gemini-2.0-flash-exp",
-#     contents=chat_history,
-#     config=config,
-# )
+    Args:
+        user_question: User's question about CocoBase, APIs, best practices, etc.
+        project_id: Optional project ID
 
-# # Add assistant response to history
-# if response.text:
-#     chat_history.append({"role": "model", "parts": [{"text": response.text}]})
-#     print(f"\n🥥 CocoBase Bot: {response.text}\n")
-# else:
-#     print("\n🥥 CocoBase Bot: [No text response - may have used a tool]\n")
+    Returns:
+        dict: {
+            "success": bool,
+            "answer": "the answer to the question",
+            "error": optional error message
+        }
+    """
+    # Use OpenAI API Key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "success": False,
+            "answer": "",
+            "error": "OPENAI_API_KEY not set in environment variables",
+            "project_id": project_id
+        }
+
+    # TODO: Replace with your fine-tuned model ID after training completes
+    # Example: ft:gpt-4o-mini-2024-07-18:your-org:cocobase:abc123
+    model = os.getenv("AI_MODEL", "gpt-4o-mini")
+
+    client = OpenAI(api_key=api_key)
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Answer this question (no code generation): {user_question}"}
+            ],
+            temperature=0.7,
+            max_tokens=2048
+        )
+
+        answer = response.choices[0].message.content
+
+        return {
+            "success": True,
+            "answer": answer,
+            "project_id": project_id
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "answer": "",
+            "error": str(e),
+            "project_id": project_id
+        }
+
+
+def generate_or_edit_code(
+    user_prompt: str,
+    existing_code: Optional[str] = None,
+    project_id: Optional[str] = None
+) -> dict:
+    """
+    Generate new cloud function code or edit existing code based on user requirements.
+
+    Args:
+        user_prompt: User's description of what the function should do or what changes to make
+        existing_code: Optional existing code to edit (if None, generates new code)
+        project_id: Optional project ID for potential rate limiting/quota enforcement
+
+    Returns:
+        dict: {
+            "code": "the generated/edited code",
+            "explanation": "explanation of what was done",
+            "suggestions": "optional suggestions for improvements"
+        }
+    """
+    # Use OpenAI API Key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "success": False,
+            "error": "OPENAI_API_KEY not set in environment variables",
+            "code": None,
+            "explanation": "Missing OpenAI API key",
+            "full_response": None,
+            "project_id": project_id,
+            "is_edit": existing_code is not None
+        }
+
+    # TODO: Replace with your fine-tuned model ID after training completes
+    # Example: ft:gpt-4o-mini-2024-07-18:your-org:cocobase:abc123
+    model = os.getenv("AI_MODEL", "gpt-4o-mini")
+
+    client = OpenAI(api_key=api_key)
+
+    # Build the prompt based on whether we're editing or generating
+    if existing_code:
+        user_message = f"""Edit the following cloud function code based on this request: {user_prompt}
+
+EXISTING CODE:
+```python
+{existing_code}
+```
+
+Please provide:
+1. The complete updated code in a python code block
+2. An explanation of changes made
+3. Any important notes or suggestions"""
+    else:
+        user_message = f"""Generate a new cloud function based on this request: {user_prompt}
+
+Please provide:
+1. Complete, production-ready code in a python code block
+2. An explanation of what the function does
+3. Any important usage notes or suggestions"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=4096
+        )
+
+        response_text = response.choices[0].message.content
+
+        # Parse the response to extract code and explanation
+        code = ""
+        explanation = response_text
+
+        # Extract code from markdown code blocks
+        if "```python" in response_text:
+            parts = response_text.split("```python")
+            if len(parts) > 1:
+                code_part = parts[1].split("```")[0].strip()
+                code = code_part
+                # Remove code from explanation
+                explanation = response_text.replace(f"```python\n{code_part}\n```", "[CODE GENERATED]").strip()
+        elif "```" in response_text:
+            parts = response_text.split("```")
+            if len(parts) >= 3:
+                code = parts[1].strip()
+                explanation = (parts[0] + parts[2]).strip()
+
+        return {
+            "success": True,
+            "code": code if code else None,
+            "explanation": explanation,
+            "full_response": response_text,
+            "project_id": project_id,
+            "is_edit": existing_code is not None
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "code": None,
+            "explanation": f"Failed to generate code: {str(e)}",
+            "full_response": None,
+            "project_id": project_id,
+            "is_edit": existing_code is not None
+        }

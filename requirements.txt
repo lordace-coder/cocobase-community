@@ -25,7 +25,7 @@ fastapi==0.115.12
 fastapi-cache2==0.2.2
 fastapi-cli==0.0.7
 google-auth==2.42.1
-google-genai==1.47.0
+openai==1.59.7
 greenlet==3.2.1
 h11==0.16.0
 hiredis==3.2.1
