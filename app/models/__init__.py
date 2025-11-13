@@ -5,3 +5,4 @@ from .timeline import Timeline, Suggestion, SuggestionLike
 from .cloud_functions import CloudFunction, FunctionExecution
 from .integrations import Integration, ProjectIntegration
 from .notifications import Notification
+from .ai_assistant import AIConversation,AIUsageCounter

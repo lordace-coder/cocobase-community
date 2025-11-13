@@ -4,7 +4,7 @@ COCOBASE CLOUD FUNCTIONS BOT - AI Assistant with Conversation History & Rate Lim
 import os
 import uuid
 from typing import Optional, List, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -122,7 +122,7 @@ def check_rate_limit(project_id: str, db: Session) -> dict:
     current_usage = usage.chat_count if usage else 0
 
     # Calculate reset time (next hour)
-    reset_time = current_hour.replace(hour=current_hour.hour + 1)
+    reset_time = current_hour + timedelta(hours=1)
 
     return {
         "allowed": current_usage < max_chats,
