@@ -5,50 +5,13 @@ from openai import OpenAI
 import hashlib
 
 
-# Load documentation files
-def load_documentation():
-    """Load essential documentation files from the cloud_function_docs folder"""
-    docs = []
-    doc_folder = "cloud_function_docs"
-
-    # Only load essential docs to reduce token usage
-    # Priority: most important for code generation
-    essential_docs = [
-        "quick-reference.md",      # Concise API reference
-        "database-api.md",         # Database operations
-        "README.md",               # Overview
-    ]
-
-    if os.path.exists(doc_folder):
-        for filename in essential_docs:
-            filepath = os.path.join(doc_folder, filename)
-            if os.path.exists(filepath):
-                try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        content = f.read()
-                        # Limit each doc to first 3000 chars (most important info)
-                        if len(content) > 3000:
-                            content = content[:3000] + "\n\n[... truncated for brevity ...]"
-                        docs.append(f"## {filename}\n\n{content}")
-                except Exception as e:
-                    print(f"Warning: Could not load {filename}: {e}")
-
-    return "\n\n---\n\n".join(docs)
-
-
-# Load the documentation
-documentation = load_documentation()
-
-# Cache documentation hash to track changes
-doc_hash = hashlib.md5(documentation.encode()).hexdigest()[:8]
+documentation="use trainin data"
 
 # System prompt that defines the bot's role and provides context
+# Only include documentation section if not using fine-tuned model
 SYSTEM_PROMPT = f"""You are CocoBase Bot, expert at writing CocoBase Cloud Functions.
 
-DOCUMENTATION:
-{documentation}
-
-CRITICAL RULES:
+{f"DOCUMENTATION:\n{documentation}\n\n" if documentation else ""}CRITICAL RULES:
 1. NEVER write import statements - all libraries are pre-imported
 2. All functions MUST have main() that returns dict
 3. Use 'db' object for database operations (auto-scoped to project)
