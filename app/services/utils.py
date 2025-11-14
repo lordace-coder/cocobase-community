@@ -32,8 +32,8 @@ async def handle_webhook_call(
 
     Args:
         url: Webhook URL to send the request to
-        data: Payload data to send
-        isUpdate: Whether this is an update operation
+        data: Payload data to send (should include event_type, document_id, data, etc.)
+        isUpdate: Whether this is an update operation (deprecated, use event_type in data)
         max_retries: Maximum number of retry attempts
         timeout: Request timeout in seconds
 
@@ -44,8 +44,9 @@ async def handle_webhook_call(
         logger.warning("Webhook call attempted with empty URL")
         return False
 
-    # Add metadata to payload
-    payload = {"data":{**data}, "isUpdate": isUpdate}
+    # The payload is already formatted with event_type from the event listener
+    # Keep backwards compatibility by still supporting the old isUpdate flag
+    payload = data if isinstance(data, dict) and "event_type" in data else {"data": data, "isUpdate": isUpdate}
 
     headers = {
         "Content-Type": "application/json",

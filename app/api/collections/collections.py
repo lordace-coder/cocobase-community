@@ -25,9 +25,7 @@ from app.models.user import User
 from app.models.app_client import AppUser
 from app.models.collections import Document, Collection
 from app.schemas.collections import *
-from app.services.utils import handle_webhook_call
 from app.storage.storage import check_storage_limit, handle_file_upload
-from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 import json
 
 
@@ -272,12 +270,8 @@ async def create_new_document(
         db.commit()
         db.refresh(new_doc)
 
-        if _collection.webhook_url:
-            bg.add_task(handle_webhook_call, _collection.webhook_url, document_data)
-
-        bg.add_task(
-            notify_collection_watchers, _collection.name, new_doc, RealtimeEvent.CREATE
-        )
+        # Webhook and watcher notifications are now handled automatically by SQLAlchemy events
+        # See app/events/document.py for the event listeners
 
         bg.add_task(invalidate_collection_cache, _collection.id)
 
@@ -700,13 +694,8 @@ async def edit_document(
         db.commit()
         db.refresh(document)
 
-        # Background tasks
-        bg.add_task(
-            notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
-        )
-
-        if collection.webhook_url:
-            bg.add_task(handle_webhook_call, collection.webhook_url, update_data, True)
+        # Webhook and watcher notifications are now handled automatically by SQLAlchemy events
+        # See app/events/document.py for the event listeners
 
         # Invalidate cache
         bg.add_task(invalidate_collection_cache, collection.id)
@@ -886,18 +875,9 @@ def batch_create_documents(
         for doc in created_documents:
             db.refresh(doc)
 
-        # Background tasks
-        for doc in created_documents:
-            bg.add_task(
-                notify_collection_watchers, collection.name, doc, RealtimeEvent.CREATE
-            )
-
-        if collection.webhook_url:
-            bg.add_task(
-                handle_webhook_call,
-                collection.webhook_url,
-                [doc.data for doc in created_documents],
-            )
+        # Webhook and watcher notifications are now handled automatically by SQLAlchemy events
+        # See app/events/document.py for the event listeners
+        # Note: Each document will trigger its own CREATE event
 
         # Invalidate cache
         bg.add_task(invalidate_collection_cache, collection.id)

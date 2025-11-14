@@ -29,6 +29,7 @@ from app.core.scheduler import start_scheduler, stop_scheduler
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 import traceback
+from app.events import *
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
