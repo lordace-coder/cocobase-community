@@ -40,7 +40,6 @@ from app.schemas.collections import DocumentSchema
 from app.schemas.user import TeamMemberSchema, UserSchema
 from app.services.email import notify_limit_reached, notify_limit_warning
 from app.services.utils import generate_api_key, handle_webhook_call
-from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 from app.core.config import DEFAULT_PERMISSION_DICT
 
 
@@ -472,19 +471,6 @@ def create_document_in_collection(
     db.add(document)
     db.commit()
     db.refresh(document)
-
-    # Background tasks
-    bg.add_task(
-        notify_collection_watchers, collection.name, document, RealtimeEvent.CREATE
-    )
-
-    pydantic_document = DocumentSchema.model_validate(document)
-
-    if collection.webhook_url:
-        bg.add_task(
-            handle_webhook_call, collection.webhook_url, pydantic_document.model_dump()
-        )
-
     return document
 
 
@@ -582,19 +568,6 @@ def update_document_in_collection(
     db.add(document)
     db.commit()
     db.refresh(document)
-
-    # Background tasks
-    bg.add_task(
-        notify_collection_watchers, collection.name, document, RealtimeEvent.UPDATE
-    )
-
-    if collection.webhook_url:
-        bg.add_task(
-            handle_webhook_call,
-            collection.webhook_url,
-            DocumentSchema.model_validate(document).model_dump(),
-            True,
-        )
 
     return document
 
