@@ -63,7 +63,7 @@ async def upload_project_file(
 
     # Pass the content and filename to the handler
     try:
-        res = handle_file_upload(file_content, project_id, filename, directory)
+        res = await handle_file_upload(file_content, project_id, filename, directory, db)
         return {"message": "File uploaded successfully", "s3_response": str(res)}
     except Exception as e:
         return {"error": str(e)}, 500

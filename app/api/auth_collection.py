@@ -121,11 +121,12 @@ async def create_new_user(
 
                 check_storage_limit(project.id, file_size, db)
 
-                file_url = handle_file_upload(
+                file_url = await handle_file_upload(
                     file_content,
                     project.id,
                     field_value.filename,
                     subdirectory="users",
+                    db=db,
                 )
 
                 # Store by field name
@@ -638,11 +639,12 @@ async def update_current_user_details(
 
                 check_storage_limit(project.id, file_size, db)
 
-                file_url = handle_file_upload(
+                file_url = await handle_file_upload(
                     file_content,
                     project.id,
                     field_value.filename,
                     subdirectory="users",
+                    db=db,
                 )
 
                 # Store by field name

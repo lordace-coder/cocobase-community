@@ -10,6 +10,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     JSON,
+    BigInteger,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB,ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,6 +56,10 @@ class Project(Base):
     payments = relationship("Payment", back_populates="project")
     active = Column(Boolean, default=True)
 
+    # Storage tracking (OPTIMIZED: cached to avoid listing all files)
+    storage_used_bytes = Column(BigInteger, nullable=True, default=0, server_default="0")
+    storage_last_updated = Column(DateTime, nullable=True)
+
     def __repr__(self):
         return f"{self.name} owned by {self.user_id}"
 
@@ -75,6 +80,7 @@ class AppUser(Base):
     __table_args__ = (
         UniqueConstraint("client_id", "email", name="uq_client_email"),
         Index("ix_app_users_created_at", "created_at"),
+        Index("ix_app_users_oauth_id", "oauth_id"),  # OPTIMIZED: Index for OAuth lookups
         Index(
             "ix_app_users_data_gin",
             "data",

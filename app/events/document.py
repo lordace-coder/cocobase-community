@@ -6,14 +6,20 @@ from app.websockets.documents import RealtimeEvent, notify_collection_watchers
 import asyncio
 import threading
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
+
+# Shared thread pool for all event handlers (max 10 concurrent threads)
+_event_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="event_handler")
 
 
 def run_async_in_thread(coro):
     """
     Run an async coroutine in a new thread with its own event loop.
     This is needed because SQLAlchemy events are synchronous.
+
+    OPTIMIZED: Uses shared ThreadPoolExecutor instead of creating new threads.
     """
     try:
         loop = asyncio.new_event_loop()
@@ -80,13 +86,14 @@ def trigger_document_event(
     """
     Trigger document event in a background thread.
     This allows the database transaction to complete without blocking.
+
+    OPTIMIZED: Uses ThreadPoolExecutor instead of creating new threads.
+    This prevents thread explosion under high load.
     """
-    thread = threading.Thread(
-        target=run_async_in_thread,
-        args=(handle_document_event_async(document, collection, event_type, old_data),),
+    _event_executor.submit(
+        run_async_in_thread,
+        handle_document_event_async(document, collection, event_type, old_data),
     )
-    thread.daemon = True
-    thread.start()
 
 
 @event.listens_for(Document, "after_insert")

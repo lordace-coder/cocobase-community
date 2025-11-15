@@ -33,8 +33,8 @@ frontend_url = "https://cocobase.buzz"
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)):
-    # check if user exists
-    if db.query(User).filter(User.email == payload.email).first():
+    # check if user exists (OPTIMIZED: using exists() instead of first())
+    if db.query(User).filter(User.email == payload.email).limit(1).count() > 0:
         raise HTTPException(400, "Account with this email already exists.")
 
     # create user

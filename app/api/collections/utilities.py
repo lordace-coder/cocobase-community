@@ -695,19 +695,46 @@ class AutoRelationshipResolver:
     def _populate_relationships(
         self, doc: Dict[str, Any], populate: List[str], project_id: str
     ) -> Dict[str, Any]:
-        """Auto-populate relationships (users or collections)."""
+        """
+        Auto-populate relationships (users or collections).
+
+        Supports explicit source specification with syntax:
+        - 'user' → auto-detect (default behavior)
+        - 'user:appuser' → force fetch from AppUser
+        - 'user:posts' → force fetch from 'posts' collection (specific collection)
+        - 'user:members' → force fetch from 'members' collection
+        """
         populate_map = self._parse_populate_paths(populate)
 
         for field_path, nested_populates in populate_map.items():
+            # Extract force_source if specified (e.g., "user:appuser" or "user:posts")
+            force_source = None
+            target_collection = None
+            actual_field = field_path
+
+            if ":" in field_path and not "." in field_path:
+                parts = field_path.split(":", 1)
+                actual_field = parts[0]
+                source_spec = parts[1].lower()
+
+                if source_spec == "appuser":
+                    force_source = "appuser"
+                else:
+                    # It's a specific collection name
+                    force_source = "collection"
+                    target_collection = source_spec
+
             # Handle nested paths
-            if "." in field_path:
-                parts = field_path.split(".", 1)
+            if "." in actual_field:
+                parts = actual_field.split(".", 1)
                 parent_field = parts[0]
                 nested_path = parts[1]
 
                 # Populate parent first
                 if parent_field not in populate_map or not doc.get(parent_field):
-                    doc = self._populate_single_field(doc, parent_field, project_id, [])
+                    doc = self._populate_single_field(
+                        doc, parent_field, project_id, [], force_source, target_collection
+                    )
 
                 # Then populate nested
                 if parent_field in doc:
@@ -726,7 +753,7 @@ class AutoRelationshipResolver:
             else:
                 # Simple field population
                 doc = self._populate_single_field(
-                    doc, field_path, project_id, nested_populates
+                    doc, actual_field, project_id, nested_populates, force_source, target_collection
                 )
 
         return doc
@@ -737,18 +764,38 @@ class AutoRelationshipResolver:
         field_name: str,
         project_id: str,
         nested_populates: List[str],
+        force_source: Optional[str] = None,
+        target_collection: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Populate a single relationship field.
 
         Detects if it should fetch from AppUser or Collection.
+
+        Args:
+            force_source: Optional explicit source type ('appuser' or 'collection')
+                         Overrides automatic detection based on field name.
+            target_collection: Optional specific collection name to use instead of auto-pluralization
         """
         id_field = f"{field_name}_id"
         ids_field = f"{field_name}_ids"
 
-        # Determine target
-        target_name = self._pluralize(field_name)
-        is_user_relation = self._is_system_collection(target_name)
+        # Determine target collection name
+        if target_collection:
+            # Use explicit collection name provided
+            target_name = target_collection
+        else:
+            # Auto-pluralize field name
+            target_name = self._pluralize(field_name)
+
+        # Check if source is explicitly specified
+        if force_source == "appuser":
+            is_user_relation = True
+        elif force_source == "collection":
+            is_user_relation = False
+        else:
+            # Auto-detect based on naming
+            is_user_relation = self._is_system_collection(target_name)
 
         # Case 1: belongs_to (field_id exists)
         if id_field in doc and doc[id_field]:

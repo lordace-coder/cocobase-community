@@ -21,13 +21,13 @@ from app.api import (
 
 from app.api.collections import collections
 from app.cron import cron
-from app.services.redis_worker import close_redis, init_redis
+from app.services.redis_worker import close_redis, init_redis, get_redis_instance
 from app.websockets import documents
 from app.core.database import engine, get_db
 from app.core.sequence_manager import check_sequences_on_startup
 from app.core.scheduler import start_scheduler, stop_scheduler
 from fastapi_cache import FastAPICache
-from fastapi_cache.backends.inmemory import InMemoryBackend
+from fastapi_cache.backends.redis import RedisBackend
 import traceback
 from app import events
 from fastapi.responses import JSONResponse
@@ -222,8 +222,15 @@ app.add_middleware(FullErrorMiddleware)
 
 @app.middleware("http")
 async def ensure_cache_init(request, call_next):
+    # OPTIMIZED: Use Redis backend for distributed caching instead of in-memory
     if FastAPICache._backend is None:
-        FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+        try:
+            redis_instance = get_redis_instance()
+            FastAPICache.init(RedisBackend(redis_instance), prefix="fastapi-cache")
+        except RuntimeError:
+            # Fallback to memory backend if Redis not available
+            from fastapi_cache.backends.inmemory import InMemoryBackend
+            FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     response = await call_next(request)
     return response
 
