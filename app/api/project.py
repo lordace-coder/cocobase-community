@@ -1,4 +1,3 @@
-from fastapi_cache.decorator import cache
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -47,32 +46,6 @@ router = APIRouter(
     prefix="/project",
     tags=["Project"],
 )
-
-
-# ============================================
-# OPTIMIZED CACHE KEY BUILDER
-# ============================================
-
-
-def user_aware_key_builder(
-    func,
-    namespace: str = "",
-    request: Request = None,
-    response: Response = None,
-    *args,
-    **kwargs,
-):
-    """Build cache key that includes user ID for security."""
-    from fastapi_cache import default_key_builder
-
-    base_key = default_key_builder(
-        func, namespace, request=request, response=response, *args, **kwargs
-    )
-    user = kwargs.get("user")
-
-    if user:
-        return f"{base_key}:user:{user.id}"
-    return base_key
 
 
 # ============================================
@@ -370,14 +343,13 @@ def get_collections_in_project(
 
 
 @router.get("/{id}/collections/{collection_id}")
-@cache(expire=60, key_builder=user_aware_key_builder)
 def get_collection_by_id(
     id: str,
     collection_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> CollectionSchema:
-    """Optimized: Use helper functions, user-aware cache."""
+    """Optimized: Use helper functions. Cache removed to prevent stale data issues."""
     project = get_project_with_access(id, user, db)
     collection = get_collection_with_access(collection_id, project, db)
     ensure_collection_permissions(collection, db)

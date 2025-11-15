@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
-from app.api.collections.utilities import invalidate_collection_cache
 from app.core.database import get_db
 from app.core.dependencies import require_dashboard_access, get_current_user
 from app.models.app_client import Project
@@ -232,9 +231,6 @@ def rename_collection(
 
     db.add(collection)
     db.commit()
-
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 

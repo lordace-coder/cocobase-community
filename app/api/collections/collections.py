@@ -5,6 +5,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Response,
     Query,
     BackgroundTasks,
     UploadFile,
@@ -15,7 +16,6 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from pydantic import BaseModel
 from sqlalchemy import cast, Integer, String, or_, and_, func
 from sqlalchemy.orm import Session, joinedload
-from fastapi_cache import FastAPICache
 from .utilities import *
 from app.core.database import get_db
 from app.core.dependencies import get_app_user, require_api_access
@@ -289,6 +289,7 @@ async def create_new_document(
 async def list_documents(
     id: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(require_api_access),
     limit: int = Query(50, ge=1, le=500),  # Reduced for performance
@@ -410,6 +411,11 @@ async def list_documents(
     # Complex: Active posts by admins with tags
     GET /collections/posts/documents?status=active&author.role=admin&populate=author&populate=tags
     """
+    # Prevent HTTP caching to ensure fresh data
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
     project = proj[0]
 
     # Get collection

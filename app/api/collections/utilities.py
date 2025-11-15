@@ -1,7 +1,6 @@
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
-from fastapi_cache import FastAPICache
 from sqlalchemy import cast, Integer, String, or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -358,13 +357,6 @@ def extract_field_and_operator(field_with_op: str) -> tuple[str, str]:
         return field_with_op, "eq"
 
 
-async def invalidate_collection_cache(collection_id: str):
-    """Invalidate all caches related to a collection."""
-    try:
-        # Clear specific collection caches
-        await FastAPICache.clear(namespace=f"collection:{collection_id}")
-    except Exception:
-        pass  # Cache invalidation shouldn't break the app
 
 
 class AutoRelationshipResolver:
