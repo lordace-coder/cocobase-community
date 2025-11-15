@@ -1,4 +1,4 @@
-from sqlalchemy import event
+from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 from app.models.collections import Document, Collection
 from app.services.utils import handle_webhook_call
@@ -122,9 +122,10 @@ def on_document_updated(mapper, connection, target: Document):
     if session:
         collection = session.query(Collection).get(target.collection_id)
         if collection:
-            # Get the old data from the session history
+            # Get the old data from the session history using inspect
             old_data = None
-            history = session.object_session(target).get_attribute_history(target, 'data')
+            insp = inspect(target)
+            history = insp.attrs.data.history
             if history.deleted:
                 old_data = history.deleted[0] if history.deleted else None
 
