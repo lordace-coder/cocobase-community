@@ -36,21 +36,14 @@ def create_engine_with_retries(url, max_retries=3, **kwargs):
                     "poolclass": NullPool,  # No pooling for SQLite
                 })
             else:
-                # PostgreSQL/Supabase configuration (OPTIMIZED: Phase 3)
+                # PostgreSQL/Supabase configuration
                 engine_config.update({
-                    "pool_size": 20,  # OPTIMIZED: Increased from 10 for higher concurrency
-                    "max_overflow": 40,  # OPTIMIZED: Increased from 20 for burst traffic
+                    "pool_size": 10,
+                    "max_overflow": 20,
                     "pool_timeout": 30,
-                    "pool_recycle": 3600,  # 1 hour (increased from 30 min)
-                    "pool_reset_on_return": "rollback",  # Reset connections on return
-                    "pool_use_lifo": True,  # OPTIMIZED: Use LIFO for better connection reuse
+                    "pool_recycle": 1800,  # 30 minutes
                     "connect_args": {
                         "connect_timeout": 10,
-                        "keepalives": 1,
-                        "keepalives_idle": 30,  # Reduced from 60
-                        "keepalives_interval": 10,
-                        "keepalives_count": 5,
-                        "options": "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000",  # OPTIMIZED: Added idle timeout
                     },
                 })
             
