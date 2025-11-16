@@ -26,9 +26,8 @@ def check_expired_subscriptions_job():
     """
     logger.info("Running scheduled job: check_expired_subscriptions")
 
+    db = next(get_db())
     try:
-        db = next(get_db())
-
         # Run the downgrade function
         downgraded_count = auto_downgrade_expired_projects(db)
 
@@ -37,10 +36,11 @@ def check_expired_subscriptions_job():
             f"Downgraded {downgraded_count} projects."
         )
 
-        db.close()
-
     except Exception as e:
         logger.error(f"Error in check_expired_subscriptions_job: {e}", exc_info=True)
+    finally:
+        # CRITICAL: Always close the connection, even if error occurs
+        db.close()
 
 
 def start_scheduler():

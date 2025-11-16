@@ -24,19 +24,19 @@ from app.models.pricing import get_current_plan
 from app.models.user import User
 from app.models.app_client import AppUser
 from app.services.email import notify_limit_reached, notify_limit_warning
-from app.services.google_login_helper import generate_oauth_url
 from app.storage.storage import check_storage_limit, handle_file_upload
 import json
 from app.services.integrations import IntegrationService
 from app.services.jwt import create_app_user_token, decode_app_user_token
-from authlib.integrations.httpx_client import AsyncOAuth2Client
+from app.services.google_token_verifier import GoogleTokenVerifier
+from app.services.apple_token_verifier import AppleTokenVerifier
+from app.services.oauth_service import OAuthService
 from app.schemas.auth_collection import (
     AppTokenResponse,
     AppUserSchema,
     AppUserResponse,
     AppUserUpdateSchema,
 )
-from app.services.oauth2_helper import TOKEN_ENDPOINT, USERINFO_ENDPOINT
 
 
 router = APIRouter(prefix="/auth-collections", tags=["App Client"])
@@ -679,15 +679,49 @@ async def update_current_user_details(
     return user
 
 
-# *GOOGLE AUTHENTICATION LOGICS
-@router.get("/login-google")
-def login_with_google(
+# *GOOGLE SIGN-IN (Token Verification)
+class GoogleSignInRequest(BaseModel):
+    id_token: str
+    platform: Optional[str] = None  # 'web', 'mobile', 'ios', 'android' - for analytics
+
+
+@router.post("/google-verify")
+def verify_google_token(
+    payload: GoogleSignInRequest,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
-):
+) -> dict:
+    """
+    Verify Google ID token and authenticate user.
+
+    This endpoint works for both web and mobile applications.
+    Clients should use Google Sign-In SDK to obtain an ID token,
+    then send it to this endpoint for verification.
+
+    Args:
+        payload: GoogleSignInRequest with id_token
+        proj: Project tuple from dependency
+        db: Database session
+
+    Returns:
+        {
+            "access_token": "jwt_token",
+            "user": {
+                "id": "user_id",
+                "email": "user@example.com",
+                "data": {...},
+                "oauth_provider": "google",
+                "created_at": "timestamp"
+            }
+        }
+
+    Raises:
+        HTTPException 400: If integration not enabled or token invalid
+        HTTPException 500: If server error occurs
+    """
     project = proj[0]
 
-    # get integration settings
+    # Get integration settings
     integration = IntegrationService(db)
     project_integration: ProjectIntegration = integration.get_project_integration(
         project.id,
@@ -696,163 +730,166 @@ def login_with_google(
 
     if not project_integration or not project_integration.is_enabled:
         raise HTTPException(
-            400, "Google OAuth integration is not enabled for this project"
+            status_code=400,
+            detail="Google Sign-In integration is not enabled for this project"
         )
 
     config = dict(project_integration.config)
-    # get required settings from project config
+
+    # Get required settings from project config
     GOOGLE_CLIENT_ID = config.get("GOOGLE_CLIENT_ID")
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(
-            400, "You need to add GOOGLE_CLIENT_ID key to your project config"
+            status_code=400,
+            detail="GOOGLE_CLIENT_ID is not configured for this project"
         )
 
-    redirect_url = (
-        config.get("GOOGLE_REDIRECT_URL")
-        or "https://api.cocobase.buzz/auth-collections/auth-google-redirect/"
-        + project.id
-    )
-    if not redirect_url:
+    try:
+        # Verify the ID token
+        verifier = GoogleTokenVerifier(GOOGLE_CLIENT_ID)
+        user_info = verifier.get_user_info(payload.id_token)
+
+        # Use OAuth service to find or create user
+        oauth_service = OAuthService(db, project.id)
+        result = oauth_service.find_or_create_user(
+            email=user_info['email'],
+            oauth_id=user_info['oauth_id'],
+            provider='google',
+            name=user_info.get('name', ''),
+            picture=user_info.get('picture', ''),
+            additional_data={
+                'given_name': user_info.get('given_name', ''),
+                'family_name': user_info.get('family_name', ''),
+            }
+        )
+
+        return result
+
+    except ValueError as e:
+        # Token verification failed
         raise HTTPException(
-            400, "You need to set the GOOGLE_REDIRECT_URL key in your project config"
+            status_code=400,
+            detail=str(e)
         )
-    url = generate_oauth_url(
-        GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID, redirect_url=redirect_url
-    )
-    return {"url": url}
+    except HTTPException:
+        # Re-raise HTTP exceptions from OAuth service
+        raise
+    except Exception as e:
+        # Unexpected error
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred during authentication: {str(e)}"
+        )
 
 
-@router.get("/auth-google-redirect/{project_id}")
-async def auth(code: str, project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).get(project_id)
+# *APPLE SIGN-IN (Token Verification)
+class AppleSignInRequest(BaseModel):
+    id_token: str
+    user: Optional[dict] = None  # Apple sends user data only on first auth
+    platform: Optional[str] = None  # 'web', 'mobile', 'ios' - for analytics
 
-    # get integration settings
+
+@router.post("/apple-verify")
+def verify_apple_token(
+    payload: AppleSignInRequest,
+    proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Verify Apple ID token and authenticate user.
+
+    This endpoint works for both web and mobile applications.
+    Clients should use Apple Sign-In SDK to obtain an ID token,
+    then send it to this endpoint for verification.
+
+    Note: Apple only sends user data (name) on first authentication.
+    Store this information when received.
+
+    Args:
+        payload: AppleSignInRequest with id_token and optional user data
+        proj: Project tuple from dependency
+        db: Database session
+
+    Returns:
+        {
+            "access_token": "jwt_token",
+            "user": {
+                "id": "user_id",
+                "email": "user@example.com",
+                "data": {...},
+                "oauth_provider": "apple",
+                "created_at": "timestamp"
+            }
+        }
+
+    Raises:
+        HTTPException 400: If integration not enabled or token invalid
+        HTTPException 500: If server error occurs
+    """
+    project = proj[0]
+
+    # Get integration settings
+    # TODO: Create Apple Sign-In integration in database with a unique ID
+    # For now, we'll create a placeholder - you need to insert this into your database
+    APPLE_INTEGRATION_ID = "apple-signin-integration-id"  # Replace with actual UUID from database
+
     integration = IntegrationService(db)
     project_integration: ProjectIntegration = integration.get_project_integration(
         project.id,
-        "046deb41-47b3-403d-aee8-b80ccb80a87e",
+        APPLE_INTEGRATION_ID,
     )
 
     if not project_integration or not project_integration.is_enabled:
         raise HTTPException(
-            400, "Google OAuth integration is not enabled for this project"
+            status_code=400,
+            detail="Apple Sign-In integration is not enabled for this project"
         )
 
     config = dict(project_integration.config)
 
-    GOOGLE_CLIENT_ID = config.get("GOOGLE_CLIENT_ID")
-    if not GOOGLE_CLIENT_ID:
+    # Get required settings from project config
+    APPLE_CLIENT_ID = config.get("APPLE_CLIENT_ID")
+    if not APPLE_CLIENT_ID:
         raise HTTPException(
-            400, "You need to add GOOGLE_CLIENT_ID key to your project config"
-        )
-
-    # GET REDIRECT URL
-    redirect_url = (
-        config.get("GOOGLE_REDIRECT_URL")
-        or "https://api.cocobase.buzz/auth-collections/auth-google-redirect/"
-        + project_id
-    )
-    if not redirect_url:
-        raise HTTPException(
-            400, "You need to set the GOOGLE_REDIRECT_URL key in your project config"
-        )
-
-    # GET CLIENT SECRET
-    GOOGLE_CLIENT_SECRET = config.get("GOOGLE_CLIENT_SECRET")
-    if not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(
-            400, "You need to configure GOOGLE_CLIENT_SECRET key for your project"
-        )
-
-    GOOGLE_COMPLETE_URL = config.get("GOOGLE_COMPLETE_URL")
-    if not GOOGLE_COMPLETE_URL:
-        raise HTTPException(
-            400, "You need to add GOOGLE_COMPLETE_URL key to your project "
+            status_code=400,
+            detail="APPLE_CLIENT_ID is not configured for this project"
         )
 
     try:
-        async with AsyncOAuth2Client(
-            client_id=GOOGLE_CLIENT_ID,
-            client_secret=GOOGLE_CLIENT_SECRET,
-        ) as client:
-            # Fetch token from Google
-            try:
-                token = await client.fetch_token(
-                    TOKEN_ENDPOINT,
-                    code=code,
-                    redirect_uri=redirect_url,
-                )
-            except Exception as e:
-                print(f"Token fetch error: {e}")
-                built_url = (
-                    f"{GOOGLE_COMPLETE_URL}?coco-error=invalid_authorization_code"
-                )
-                return RedirectResponse(built_url)
+        # Verify the ID token
+        verifier = AppleTokenVerifier(APPLE_CLIENT_ID)
+        user_info = verifier.get_user_info(payload.id_token, payload.user)
 
-            # Get user info from Google
-            try:
-                headers = {"Authorization": f"Bearer {token['access_token']}"}
-                userinfo = await client.get(USERINFO_ENDPOINT, headers=headers)
-                user = userinfo.json()
-            except Exception as e:
-                print(f"User info fetch error: {e}")
-                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=failed_to_get_user_info"
-                return RedirectResponse(built_url)
+        # Prepare additional data
+        additional_data = {}
+        if user_info.get('is_private_email'):
+            additional_data['is_private_email'] = True
 
-            # Validate email
-            email: str | None = user.get("email")
-            if not email:
-                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=no_email_provided"
-                return RedirectResponse(built_url)
+        # Use OAuth service to find or create user
+        oauth_service = OAuthService(db, project.id)
+        result = oauth_service.find_or_create_user(
+            email=user_info['email'],
+            oauth_id=user_info['oauth_id'],
+            provider='apple',
+            name=user_info.get('name', ''),
+            picture='',  # Apple doesn't provide profile pictures
+            additional_data=additional_data
+        )
 
-            # Check if user exists
-            try:
-                existing_user = (
-                    db.query(AppUser)
-                    .filter(AppUser.email == email, AppUser.client_id == project_id)
-                    .first()
-                )
+        return result
 
-                if existing_user:
-                    # User exists - check if they used OAuth before
-                    if not existing_user.oauth_id:
-                        built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=email_already_registered_with_password"
-                        return RedirectResponse(built_url)
-
-                    # User exists and used OAuth - log them in
-                    access_token = create_app_user_token(existing_user)
-
-                    built_url = f"{GOOGLE_COMPLETE_URL}?coco-super-token={access_token}"
-                    return RedirectResponse(built_url)
-
-                else:
-                    # Create new user
-                    new_user = AppUser(
-                        email=email,
-                        client_id=project.id,
-                        oauth_id=user.get("sub"),
-                        password=email,
-                        data={
-                            "username": str(user.get("name", "")).replace(" ", "")
-                            or f"user_{user.get('sub', '')[:8]}"
-                        },
-                    )
-                    db.add(new_user)
-                    db.commit()
-
-                    # Generate token for new user
-                    access_token = create_app_user_token(new_user)
-                    built_url = f"{GOOGLE_COMPLETE_URL}?coco-super-token={access_token}"
-                    print(f"New user created: {built_url}")
-                    return RedirectResponse(built_url)
-
-            except Exception as e:
-                print(f"Database error: {e}")
-                db.rollback()
-                built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=database_error"
-                return RedirectResponse(built_url)
-
+    except ValueError as e:
+        # Token verification failed
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions from OAuth service
+        raise
     except Exception as e:
-        print(f"Unexpected error in Google auth: {e}")
-        built_url = f"{GOOGLE_COMPLETE_URL}?coco-error=authentication_failed"
-        return RedirectResponse(built_url)
+        # Unexpected error
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred during authentication: {str(e)}"
+        )

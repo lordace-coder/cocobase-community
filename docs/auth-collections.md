@@ -15,7 +15,7 @@ User authentication and management for your application.
 5. [Update User](#update-user)
 6. [List Users](#list-users)
 7. [Get User by ID](#get-user-by-id)
-8. [OAuth (Google)](#oauth-google)
+8. [OAuth Authentication](#oauth-authentication)
 9. [User Relationships](#user-relationships)
 
 ---
@@ -403,64 +403,205 @@ curl https://api.cocobase.buzz/auth-collections/users/user_abc123 \
 
 ---
 
-## OAuth (Google)
+## OAuth Authentication
 
-Authenticate users with Google OAuth.
+Authenticate users with OAuth providers (Google, Apple). Uses modern ID token verification for seamless web and mobile authentication.
 
-### Step 1: Get OAuth URL
+**Key Features:**
+- Works for both web and mobile apps
+- Single API call (no redirects needed)
+- Server-side token verification
+- Native mobile experience
+- Prevents mixed authentication
 
-**Endpoint:** `GET /auth-collections/login-google`
+---
+
+### Google Sign-In
+
+Authenticate users with Google using ID token verification.
+
+**Endpoint:** `POST /auth-collections/google-verify`
 
 **Headers:**
 ```bash
 X-API-Key: your-api-key
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjZmODkw...",
+  "platform": "web"
+}
 ```
 
 **Example:**
 ```bash
-curl https://api.cocobase.buzz/auth-collections/login-google \
-  -H "X-API-Key: your-api-key"
+curl -X POST https://api.cocobase.buzz/auth-collections/google-verify \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjZmODkw...",
+    "platform": "web"
+  }'
 ```
 
-**Response:**
+**Success Response (200):**
 ```json
 {
-  "url": "https://accounts.google.com/o/oauth2/v2/auth?client_id=..."
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "user@gmail.com",
+    "data": {
+      "username": "johndoe",
+      "name": "John Doe",
+      "picture": "https://lh3.googleusercontent.com/...",
+      "given_name": "John",
+      "family_name": "Doe"
+    },
+    "oauth_provider": "google",
+    "created_at": "2025-11-16T10:30:00Z"
+  }
 }
 ```
 
-### Step 2: Redirect User
+**Error Responses:**
+- `400` - Google Sign-In integration is not enabled
+- `400` - GOOGLE_CLIENT_ID is not configured
+- `400` - Invalid Google ID token
+- `400` - This email is already registered with password authentication
+- `400` - This email is already registered with Apple Sign-In
+- `500` - An error occurred during authentication
 
-Redirect the user to the URL returned in Step 1. After authentication, Google redirects back with the JWT token:
+**Configuration Required:**
+- `GOOGLE_CLIENT_ID` - Your Google OAuth 2.0 Client ID (from Google Cloud Console)
 
+**Client Implementation:**
+
+See [google-auth-client.md](../google-auth-client.md) for complete implementation guides for:
+- Web (React, Vue, vanilla JavaScript)
+- React Native
+- Flutter
+- iOS (Swift)
+- Android (Kotlin)
+
+---
+
+### Apple Sign-In
+
+Authenticate users with Apple ID using ID token verification.
+
+**Endpoint:** `POST /auth-collections/apple-verify`
+
+**Headers:**
+```bash
+X-API-Key: your-api-key
+Content-Type: application/json
 ```
-https://your-app.com/auth-complete?coco-super-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+**Request Body:**
+```json
+{
+  "id_token": "eyJraWQiOiJlWGF1bm1MIiwiYWxnIjoiUlMyNTYifQ...",
+  "user": {
+    "name": {
+      "firstName": "John",
+      "lastName": "Doe"
+    }
+  },
+  "platform": "ios"
+}
 ```
 
-### Configuration Required
+**Notes:**
+- `user` field is optional and only sent by Apple on first authentication
+- Store user name immediately when received
+- Subsequent logins only provide `id_token`
 
-You need to configure Google OAuth in your project settings:
-
-1. **GOOGLE_CLIENT_ID** - Your Google OAuth Client ID
-2. **GOOGLE_CLIENT_SECRET** - Your Google OAuth Client Secret
-3. **GOOGLE_REDIRECT_URL** - OAuth redirect URL (default: `https://api.cocobase.buzz/auth-collections/auth-google-redirect/{project_id}`)
-4. **GOOGLE_COMPLETE_URL** - Your app URL where users are redirected after auth
-
-### Error Handling
-
-OAuth errors are returned as query parameters:
-
+**Example:**
+```bash
+curl -X POST https://api.cocobase.buzz/auth-collections/apple-verify \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_token": "eyJraWQiOiJlWGF1bm1MIiwiYWxnIjoiUlMyNTYifQ...",
+    "user": {
+      "name": {
+        "firstName": "John",
+        "lastName": "Doe"
+      }
+    },
+    "platform": "ios"
+  }'
 ```
-https://your-app.com/auth-complete?coco-error=invalid_authorization_code
+
+**Success Response (200):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "user@privaterelay.appleid.com",
+    "data": {
+      "username": "johndoe",
+      "name": "John Doe",
+      "is_private_email": true
+    },
+    "oauth_provider": "apple",
+    "created_at": "2025-11-16T10:30:00Z"
+  }
+}
 ```
 
-**Possible Errors:**
-- `invalid_authorization_code` - OAuth code is invalid/expired
-- `failed_to_get_user_info` - Could not fetch user info from Google
-- `no_email_provided` - Google account has no email
-- `email_already_registered_with_password` - Email exists but used password signup
-- `database_error` - Internal database error
-- `authentication_failed` - General authentication failure
+**Error Responses:**
+- `400` - Apple Sign-In integration is not enabled
+- `400` - APPLE_CLIENT_ID is not configured
+- `400` - Invalid Apple ID token
+- `400` - Apple ID token has expired
+- `400` - This email is already registered with password authentication
+- `400` - This email is already registered with Google Sign-In
+- `500` - An error occurred during authentication
+
+**Configuration Required:**
+- `APPLE_CLIENT_ID` - Your Apple Service ID (web) or App Bundle ID (iOS)
+
+**Client Implementation:**
+
+See [apple-auth-client.md](../apple-auth-client.md) for complete implementation guides for:
+- iOS (Swift, SwiftUI)
+- React Native
+- Web (JavaScript)
+
+---
+
+### OAuth Security Features
+
+Both Google and Apple Sign-In implementations include:
+
+- ✅ **Token Verification** - ID tokens verified using provider's public keys
+- ✅ **Email Verification** - Only verified emails accepted
+- ✅ **Provider Isolation** - Users can't mix authentication methods
+- ✅ **Secure JWT Generation** - Your app tokens generated server-side
+- ✅ **No Secrets on Client** - Client apps never handle sensitive credentials
+
+### OAuth User Management
+
+**First-Time Sign-In:**
+- New user created automatically
+- `oauth_id` set to provider's unique user ID
+- `oauth_provider` set to "google" or "apple"
+- Email and profile data stored
+
+**Returning Users:**
+- Logged in automatically with new JWT token
+- Profile data can be updated from OAuth provider
+
+**Mixed Authentication Prevention:**
+- Users who signed up with password can't use OAuth
+- Users who signed up with Google can't use Apple (and vice versa)
+- Clear error messages guide users to correct authentication method
 
 ---
 

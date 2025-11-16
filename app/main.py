@@ -17,6 +17,7 @@ from app.api import (
     payments,
     collaborations,
     storage,
+    health,
 )
 
 from app.api.collections import collections
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 # Main app - Public API with collections and auth-collections at root
 app = FastAPI(
     title="CocoBase Public API",
-    version="1.2.1",
+    version="1.5.0",
     description="Public API documentation for CocoBase Collections and Authentication",
     docs_url="/docs",  # Public docs
     redoc_url="/redoc",
@@ -47,7 +48,7 @@ app = FastAPI(
 # Dashboard/Admin API - separate docs (not used, just for creating openapi schema)
 dashboard_app = FastAPI(
     title="CocoBase Dashboard API",
-    version="1.2.1",
+    version="1.5.0",
     description="Complete API docs for COCOBASE Dashboard and Admin",
 )
 
@@ -92,6 +93,7 @@ async def shutdown_event():
 
 
 # Include public routes to main app (shown in public docs)
+app.include_router(health.router)  # Health checks - available publicly
 app.include_router(collections.router)
 app.include_router(auth_collection.router)
 
