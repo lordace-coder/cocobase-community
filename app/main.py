@@ -23,8 +23,7 @@ from app.api.collections import collections
 from app.cron import cron
 from app.services.redis_worker import close_redis, init_redis, get_redis_instance
 from app.websockets import documents
-from app.core.database import engine, get_db
-from app.core.sequence_manager import check_sequences_on_startup
+from app.core.database import engine
 from app.core.scheduler import start_scheduler, stop_scheduler
 import traceback
 from app import events
@@ -68,16 +67,6 @@ app.add_middleware(
 async def startup_event():
     await init_redis()
     print("Redis connected!")
-
-    # Check and fix database sequences to prevent duplicate key errors
-    try:
-        db = next(get_db())
-        check_sequences_on_startup(db)
-        db.close()
-    except Exception as e:
-        logger.error(f"Error checking sequences on startup: {e}")
-        # Don't fail startup if sequence check fails
-        pass
 
     # Start background scheduler for cron jobs
     try:

@@ -122,9 +122,6 @@ def update_collection(
     db.commit()
     db.refresh(collection)
 
-    # Invalidate cache in background
-    bg.add_task(invalidate_collection_cache, collection.id)
-
     return collection
 
 
@@ -157,9 +154,6 @@ def delete_collection(
     )
 
     db.commit()
-
-    # Invalidate cache in background
-    bg.add_task(invalidate_collection_cache, stored_collection_id)
 
     return None
 
@@ -273,8 +267,6 @@ async def create_new_document(
 
         # Webhook and watcher notifications are now handled automatically by SQLAlchemy events
         # See app/events/document.py for the event listeners
-
-        bg.add_task(invalidate_collection_cache, _collection.id)
 
         return new_doc
 
@@ -800,9 +792,6 @@ async def edit_document(
         # Webhook and watcher notifications are now handled automatically by SQLAlchemy events
         # See app/events/document.py for the event listeners
 
-        # Invalidate cache
-        bg.add_task(invalidate_collection_cache, collection.id)
-
         return document
 
     except HTTPException:
@@ -847,9 +836,6 @@ def delete_document(
         raise HTTPException(404, "Document not found")
 
     db.commit()
-
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     return {"status": "success", "message": "Document deleted successfully"}
 
@@ -994,9 +980,6 @@ def batch_create_documents(
         # See app/events/document.py for the event listeners
         # Note: Each document will trigger its own CREATE event
 
-        # Invalidate cache
-        bg.add_task(invalidate_collection_cache, collection.id)
-
         return [DocumentSchema.model_validate(doc) for doc in created_documents]
 
     except Exception as e:
@@ -1039,9 +1022,6 @@ def batch_delete_documents(
     )
 
     db.commit()
-
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     return {
         "status": "success",
@@ -1097,9 +1077,6 @@ def batch_update_documents(
                 updated_count += 1
 
     db.commit()
-
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     return {
         "status": "success",

@@ -316,8 +316,6 @@ def rename_field(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -391,8 +389,6 @@ def add_field(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -465,8 +461,6 @@ def delete_field(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -577,8 +571,6 @@ def change_field_type(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -705,8 +697,6 @@ def merge_fields(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -802,8 +792,6 @@ def split_field(
 
     db.commit()
 
-    # Invalidate cache
-    bg.add_task(invalidate_collection_cache, collection.id)
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
