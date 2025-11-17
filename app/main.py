@@ -66,7 +66,8 @@ admin = Admin(
     app,
     engine=engine,
     authentication_backend=authentication_backend,
-    templates_dir="app/templates"
+    templates_dir="app/templates",
+    base_url="/_/admin", 
 )
 
 # Configure CORS for main app
