@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.admin import *
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
+from app.admin.email_sender import EmailSenderView
 from app.api import (
     ai_assistant,
     analytics,
@@ -61,7 +62,12 @@ dashboard_app = FastAPI(
     description="Complete API docs for COCOBASE Dashboard and Admin",
 )
 
-admin = Admin(app, engine=engine, authentication_backend=authentication_backend)
+admin = Admin(
+    app,
+    engine=engine,
+    authentication_backend=authentication_backend,
+    templates_dir="app/templates"
+)
 
 # Configure CORS for main app
 app.add_middleware(
@@ -226,3 +232,4 @@ admin.add_view(ProjectModel)
 admin.add_view(IntegrationsModel)
 admin.add_view(ProjectIntegrationModel)
 admin.add_view(ApiUsageCounterModel)
+admin.add_view(EmailSenderView)

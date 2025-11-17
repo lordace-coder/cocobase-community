@@ -146,6 +146,18 @@ def create_project(
     return proj
 
 
+# NOTIFICATIONS
+@router.get("/notifications")
+def get_user_notifications( user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),)->list[NotificationSchema]:
+    """Fetch user notifications."""
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    return notifications
 @router.delete("/{id}")
 def delete_project(
     id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
@@ -899,15 +911,3 @@ def update_collection(
 
 
 
-# NOTIFICATIONS
-@router.get("/notifications")
-def get_user_notifications( user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),)->list[NotificationSchema]:
-    """Fetch user notifications."""
-    notifications = (
-        db.query(Notification)
-        .filter(Notification.user_id == user.id)
-        .order_by(Notification.created_at.desc())
-        .all()
-    )
-    return notifications
