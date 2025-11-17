@@ -11,6 +11,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
+from app.models.notifications import Notification
 from app.schemas.auth_collection import (
     AppUserSchema,
     AppUserResponse,
@@ -34,6 +35,7 @@ from app.schemas.collections import (
     DocumentCreateSchema,
     PaginatedResponse,
 )
+from app.schemas.notifications import NotificationSchema
 from app.schemas.projects import ProjectInDBBase, ProjectCreate, ProjectUpdate
 from app.schemas.collections import DocumentSchema
 from app.schemas.user import TeamMemberSchema, UserSchema
@@ -894,3 +896,18 @@ def update_collection(
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to update collection: {str(e)}")
+
+
+
+# NOTIFICATIONS
+@router.get("/notifications")
+def get_user_notifications( user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),)->list[NotificationSchema]:
+    """Fetch user notifications."""
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    return notifications
