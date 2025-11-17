@@ -35,12 +35,15 @@ from sqladmin import Admin
 import logging
 
 logger = logging.getLogger(__name__)
-# Ensure root logger is configured so module-level debug/info logs are visible
+# Configure root logger to WARNING by default to reduce noise, but enable INFO for project tracking
 if not logging.getLogger().handlers:
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+# Ensure project tracking logs at INFO level are shown (e.g., 'Synced usage to DB')
+logging.getLogger("app.services.project_tracking").setLevel(logging.INFO)
 
 # Main app - Public API with collections and auth-collections at root
 app = FastAPI(
