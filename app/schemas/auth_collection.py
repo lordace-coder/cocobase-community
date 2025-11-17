@@ -30,3 +30,4 @@ class AppUserResponse(BaseModel):
 
 class AppTokenResponse(BaseModel):
     access_token: str
+    user:Optional[AppUserResponse] = None

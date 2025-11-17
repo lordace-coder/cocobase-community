@@ -35,6 +35,12 @@ from sqladmin import Admin
 import logging
 
 logger = logging.getLogger(__name__)
+# Ensure root logger is configured so module-level debug/info logs are visible
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 # Main app - Public API with collections and auth-collections at root
 app = FastAPI(
@@ -67,7 +73,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await init_redis()
-    print("Redis connected!")
+    logger.info("Redis connected!")
 
     # Start background scheduler for cron jobs
     try:
@@ -82,7 +88,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     await close_redis()
-    print("Redis closed!")
+    logger.info("Redis closed!")
 
     # Stop background scheduler
     try:

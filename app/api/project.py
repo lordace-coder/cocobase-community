@@ -101,12 +101,21 @@ def get_all_projects(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[ProjectInDBBase]:
     """Optimized: Single query with eager loading."""
+    # Debug: measure query time to help diagnose slowness
+    import time
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    start = time.time()
     projects = (
         db.query(Project)
         .options(joinedload(Project.owner))  # Eager load owner
         .filter(or_(Project.user_id == user.id, Project.shared_with.any(id=user.id)))
         .all()
     )
+    duration = (time.time() - start) * 1000
+    logger.debug("get_all_projects executed in %.1fms for user %s", duration, user.id)
     return projects
 
 

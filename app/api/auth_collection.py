@@ -60,7 +60,9 @@ def user_login(
         # check if password is valid
         if user.compare_password(payload.password):
             # return api token
-            return {"access_token": create_app_user_token(user)}
+            return {
+                'access_token':create_app_user_token(user), 'user':user
+            }
         else:
             raise HTTPException(400, "Invalid password value")
 
@@ -209,7 +211,7 @@ async def create_new_user(
         db.add(user)
         db.commit()
         db.refresh(user)
-        return {"access_token": create_app_user_token(user)}
+        return AppTokenResponse(access_token=create_app_user_token(user), user=user)
 
 
 # list users with advanced querying
@@ -731,7 +733,7 @@ def verify_google_token(
     if not project_integration or not project_integration.is_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Google Sign-In integration is not enabled for this project"
+            detail="Google Sign-In integration is not enabled for this project",
         )
 
     config = dict(project_integration.config)
@@ -741,7 +743,7 @@ def verify_google_token(
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(
             status_code=400,
-            detail="GOOGLE_CLIENT_ID is not configured for this project"
+            detail="GOOGLE_CLIENT_ID is not configured for this project",
         )
 
     try:
@@ -752,33 +754,29 @@ def verify_google_token(
         # Use OAuth service to find or create user
         oauth_service = OAuthService(db, project.id)
         result = oauth_service.find_or_create_user(
-            email=user_info['email'],
-            oauth_id=user_info['oauth_id'],
-            provider='google',
-            name=user_info.get('name', ''),
-            picture=user_info.get('picture', ''),
+            email=user_info["email"],
+            oauth_id=user_info["oauth_id"],
+            provider="google",
+            name=user_info.get("name", ""),
+            picture=user_info.get("picture", ""),
             additional_data={
-                'given_name': user_info.get('given_name', ''),
-                'family_name': user_info.get('family_name', ''),
-            }
+                "given_name": user_info.get("given_name", ""),
+                "family_name": user_info.get("family_name", ""),
+            },
         )
 
         return result
 
     except ValueError as e:
         # Token verification failed
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions from OAuth service
         raise
     except Exception as e:
         # Unexpected error
         raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred during authentication: {str(e)}"
+            status_code=500, detail=f"An error occurred during authentication: {str(e)}"
         )
 
 
@@ -831,7 +829,9 @@ def verify_apple_token(
     # Get integration settings
     # TODO: Create Apple Sign-In integration in database with a unique ID
     # For now, we'll create a placeholder - you need to insert this into your database
-    APPLE_INTEGRATION_ID = "apple-signin-integration-id"  # Replace with actual UUID from database
+    APPLE_INTEGRATION_ID = (
+        "apple-signin-integration-id"  # Replace with actual UUID from database
+    )
 
     integration = IntegrationService(db)
     project_integration: ProjectIntegration = integration.get_project_integration(
@@ -842,7 +842,7 @@ def verify_apple_token(
     if not project_integration or not project_integration.is_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Apple Sign-In integration is not enabled for this project"
+            detail="Apple Sign-In integration is not enabled for this project",
         )
 
     config = dict(project_integration.config)
@@ -851,8 +851,7 @@ def verify_apple_token(
     APPLE_CLIENT_ID = config.get("APPLE_CLIENT_ID")
     if not APPLE_CLIENT_ID:
         raise HTTPException(
-            status_code=400,
-            detail="APPLE_CLIENT_ID is not configured for this project"
+            status_code=400, detail="APPLE_CLIENT_ID is not configured for this project"
         )
 
     try:
@@ -862,34 +861,30 @@ def verify_apple_token(
 
         # Prepare additional data
         additional_data = {}
-        if user_info.get('is_private_email'):
-            additional_data['is_private_email'] = True
+        if user_info.get("is_private_email"):
+            additional_data["is_private_email"] = True
 
         # Use OAuth service to find or create user
         oauth_service = OAuthService(db, project.id)
         result = oauth_service.find_or_create_user(
-            email=user_info['email'],
-            oauth_id=user_info['oauth_id'],
-            provider='apple',
-            name=user_info.get('name', ''),
-            picture='',  # Apple doesn't provide profile pictures
-            additional_data=additional_data
+            email=user_info["email"],
+            oauth_id=user_info["oauth_id"],
+            provider="apple",
+            name=user_info.get("name", ""),
+            picture="",  # Apple doesn't provide profile pictures
+            additional_data=additional_data,
         )
 
         return result
 
     except ValueError as e:
         # Token verification failed
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions from OAuth service
         raise
     except Exception as e:
         # Unexpected error
         raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred during authentication: {str(e)}"
+            status_code=500, detail=f"An error occurred during authentication: {str(e)}"
         )

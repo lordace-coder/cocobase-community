@@ -1,4 +1,5 @@
 import time
+import logging
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import or_
@@ -9,6 +10,7 @@ from app.models.app_client import AppUser, Project
 from app.models.user import User
 from app.services.jwt import decode_access_token, decode_app_user_token
 from app.services.project_tracking import check_and_increment_api_usage
+from app.services.redis_worker import get_redis_instance
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -73,6 +75,9 @@ class TTLCache:
 user_cache = TTLCache(ttl=300, max_size=5000)  # 5 min - users change rarely
 project_cache = TTLCache(ttl=60, max_size=10000)  # 1 min - projects more dynamic
 token_cache = TTLCache(ttl=600, max_size=10000)  # 10 min - decoded tokens
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_current_user(
@@ -242,34 +247,99 @@ async def get_project(
         )
 
     # OPTIMIZATION: Try cache first (data dict, not ORM objects)
-    cached_data = project_data_cache.get(x_api_key)
-    if cached_data:
-        # Reconstruct lightweight objects from cached data
-        project = (
-            db.query(Project).filter(Project.id == cached_data["project_id"]).first()
+    # Try Redis first (async). Use in-memory cache as fallback.
+    try:
+        redis = await get_redis_instance()
+        raw = await redis.get(f"project_data:{x_api_key}")
+        if raw:
+            import json
+
+            cached_data = json.loads(raw)
+            logger.debug("redis project_data HIT for key=%s", x_api_key)
+
+            # Reconstruct minimal ORM objects
+            project = (
+                db.query(Project)
+                .filter(Project.id == cached_data["project_id"])
+                .first()
+            )
+            user = db.query(User).filter(User.id == cached_data["user_id"]).first()
+
+            if not project or not user:
+                logger.debug(
+                    "Redis cache refers to missing project/user - clearing key=%s",
+                    x_api_key,
+                )
+                await redis.delete(f"project_data:{x_api_key}")
+            else:
+                # Use cached booleans/fields first
+                if cached_data.get("active") is False:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Inactive Project, Upgrade to continue or contact support.",
+                    )
+
+                project.allowed_origins = cached_data.get("allowed_origins", [])
+
+                if not check_origin_allowed(project, request):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Request origin not allowed for this project",
+                    )
+
+                logger.debug(
+                    "accessed proj from redis cache (key=%s, project_id=%s)",
+                    x_api_key,
+                    cached_data.get("project_id"),
+                )
+                await check_and_increment_api_usage(project, db, bg, user)
+                return project, user
+    except Exception as e:
+        logger.debug(
+            "Redis unavailable or error reading cache: %s - falling back to in-memory cache",
+            e,
         )
-        user = db.query(User).filter(User.id == cached_data["user_id"]).first()
-
-        if project and user:
-            # Fast path validations
-            if not project.active:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Inactive Project, Upgrade to continue or contact support.",
+        # Fallback to in-memory cache
+        cached_data = project_data_cache.get(x_api_key)
+        if cached_data:
+            try:
+                logger.debug("in-memory project_data_cache HIT for key=%s", x_api_key)
+                project = (
+                    db.query(Project)
+                    .filter(Project.id == cached_data["project_id"])
+                    .first()
                 )
+                user = db.query(User).filter(User.id == cached_data["user_id"]).first()
 
-            # Origin check (cached allowed_origins)
-            if not check_origin_allowed(project, request):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Request origin not allowed for this project",
+                if not project or not user:
+                    project_data_cache.delete(x_api_key)
+                else:
+                    if cached_data.get("active") is False:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Inactive Project, Upgrade to continue or contact support.",
+                        )
+
+                    project.allowed_origins = cached_data.get("allowed_origins", [])
+                    if not check_origin_allowed(project, request):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Request origin not allowed for this project",
+                        )
+
+                    logger.debug(
+                        "accessed proj from in-memory cache (key=%s, project_id=%s)",
+                        x_api_key,
+                        cached_data.get("project_id"),
+                    )
+                    await check_and_increment_api_usage(project, db, bg, user)
+                    return project, user
+            except Exception:
+                project_data_cache.delete(x_api_key)
+                logger.exception(
+                    "Cleared project_data_cache due to handling error for key=%s",
+                    x_api_key,
                 )
-
-            print("accessed proj")
-
-            # Check and increment API usage
-            await check_and_increment_api_usage(project, db, bg, user)
-            return project, user
 
     # Cache miss or stale - query with eager loading
     from sqlalchemy.orm import joinedload
@@ -303,7 +373,7 @@ async def get_project(
 
     # Check and increment API usage
     await check_and_increment_api_usage(project, db, bg, user)
-    print("accessed proj")
+    logger.debug("accessed proj (from DB) %s", project.id)
     # OPTIMIZATION: Cache lightweight data (not full ORM objects)
     project_data_cache.set(
         x_api_key,
