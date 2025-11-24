@@ -211,7 +211,7 @@ async def create_new_user(
         db.add(user)
         db.commit()
         db.refresh(user)
-        return AppTokenResponse(access_token=create_app_user_token(user), user=user)
+        return {"access_token":create_app_user_token(user), "user":user}
 
 
 # list users with advanced querying
@@ -592,8 +592,46 @@ async def update_current_user_details(
     db: Session = Depends(get_db),
     user: AppUser = Depends(get_app_user),
 ) -> AppUserResponse:
+    """
+    Update current user with support for array operations on the data field.
+
+    **Array Operations Support:**
+
+    1. **Append items to array in data field:**
+    ```json
+    {
+      "data": {"username": "john"},
+      "$append": {
+        "followers": ["user-123"],
+        "tags": ["premium"]
+      }
+    }
+    ```
+
+    2. **Remove items from array in data field:**
+    ```json
+    {
+      "$remove": {
+        "followers": ["user-456"],
+        "tags": ["trial"]
+      }
+    }
+    ```
+
+    3. **Combine operations:**
+    ```json
+    {
+      "email": "newemail@example.com",
+      "data": {"bio": "Updated bio"},
+      "$append": {"followers": ["user-789"]},
+      "$remove": {"followers": ["user-123"]}
+    }
+    ```
+
+    **Note:** Array operations apply to fields within the `data` JSONB field only.
+    Top-level fields like `email` are updated normally.
+    """
     if not user:
-        raise HTTPException(401, "Not authenticated")
         raise HTTPException(401, "Not authenticated")
 
     # Get user's project for storage
@@ -663,12 +701,57 @@ async def update_current_user_details(
 
     # Update user fields
     if update_data:
+        # Extract special array operations
+        append_ops = update_data.pop("$append", {})
+        remove_ops = update_data.pop("$remove", {})
+
         # Handle password separately (needs to be hashed)
         password = update_data.pop("password", None)
 
-        # Update other fields
+        # Get existing data JSONB field
+        existing_data = dict(user.data) if user.data else {}
+
+        # 1. Apply REMOVE operations on data field
+        for field, items_to_remove in remove_ops.items():
+            if field in existing_data and isinstance(existing_data[field], list):
+                # Ensure items_to_remove is a list
+                if not isinstance(items_to_remove, list):
+                    items_to_remove = [items_to_remove]
+                # Remove items
+                existing_data[field] = [
+                    item for item in existing_data[field]
+                    if item not in items_to_remove
+                ]
+
+        # 2. Apply APPEND operations on data field
+        for field, items_to_add in append_ops.items():
+            # Ensure items_to_add is a list
+            if not isinstance(items_to_add, list):
+                items_to_add = [items_to_add]
+
+            # Initialize field as array if it doesn't exist
+            if field not in existing_data:
+                existing_data[field] = []
+            elif not isinstance(existing_data[field], list):
+                # If field exists but is not a list, convert to list
+                existing_data[field] = [existing_data[field]]
+
+            # Append new items (avoid duplicates)
+            for item in items_to_add:
+                if item not in existing_data[field]:
+                    existing_data[field].append(item)
+
+        # 3. Merge regular data updates
+        if "data" in update_data:
+            existing_data.update(update_data.pop("data"))
+
+        # Update the data field
+        user.data = existing_data
+
+        # 4. Update other top-level fields (email, etc.)
         for field, value in update_data.items():
-            setattr(user, field, value)
+            if hasattr(user, field):
+                setattr(user, field, value)
 
         # Update password if provided
         if password:

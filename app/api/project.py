@@ -154,7 +154,7 @@ def get_user_notifications( user: User = Depends(get_current_user),
     notifications = (
         db.query(Notification)
         .filter(Notification.user_id == user.id)
-        .order_by(Notification.created_at.desc())
+        .order_by(Notification.created.desc())
         .all()
     )
     return notifications

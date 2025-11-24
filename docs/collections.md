@@ -239,11 +239,13 @@ curl https://api.cocobase.buzz/collections/users/documents/doc_abc123 \
 
 Update an existing document (partial or full update).
 
-**Endpoint:** `PUT /collections/{collection_name}/documents/{document_id}`
+**Endpoint:** `PATCH /collections/{collection_name}/documents/{document_id}`
+
+### Basic Update
 
 **Example:**
 ```bash
-curl -X PUT https://api.cocobase.buzz/collections/users/documents/doc_abc123 \
+curl -X PATCH https://api.cocobase.buzz/collections/users/documents/doc_abc123 \
   -H "X-API-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -264,10 +266,128 @@ curl -X PUT https://api.cocobase.buzz/collections/users/documents/doc_abc123 \
 }
 ```
 
+### Array Operations (NEW!)
+
+Manage array fields (like likes, followers, tags) without replacing the entire array.
+
+#### Append to Array
+
+Add items to an array field. Creates the array if it doesn't exist. Prevents duplicates automatically.
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/collections/posts/documents/post_123 \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "$append": {
+      "likes": ["user_456"],
+      "tags": ["featured"]
+    }
+  }'
+```
+
+**Before:**
+```json
+{
+  "id": "post_123",
+  "title": "My Post",
+  "likes": ["user_123"]
+}
+```
+
+**After:**
+```json
+{
+  "id": "post_123",
+  "title": "My Post",
+  "likes": ["user_123", "user_456"],
+  "tags": ["featured"]
+}
+```
+
+#### Remove from Array
+
+Remove specific items from an array field.
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/collections/posts/documents/post_123 \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "$remove": {
+      "likes": ["user_123"]
+    }
+  }'
+```
+
+**Result:**
+```json
+{
+  "id": "post_123",
+  "title": "My Post",
+  "likes": ["user_456"]
+}
+```
+
+#### Combined Operations
+
+Update regular fields and manage arrays in one request:
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/collections/posts/documents/post_123 \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Updated Title",
+    "views": 150,
+    "$append": {
+      "likes": ["user_789"]
+    },
+    "$remove": {
+      "likes": ["user_123"]
+    }
+  }'
+```
+
+**JavaScript Example - Toggle Like:**
+```javascript
+// Like a post
+await fetch(`https://api.cocobase.buzz/collections/posts/documents/post_123`, {
+  method: 'PATCH',
+  headers: {
+    'X-API-Key': 'your-api-key',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    $append: {
+      likes: ['user_456']
+    }
+  })
+});
+
+// Unlike a post
+await fetch(`https://api.cocobase.buzz/collections/posts/documents/post_123`, {
+  method: 'PATCH',
+  headers: {
+    'X-API-Key': 'your-api-key',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    $remove: {
+      likes: ['user_456']
+    }
+  })
+});
+```
+
 **Notes:**
 - Only specified fields are updated (partial update)
 - Existing fields not mentioned remain unchanged
 - Document ID and `created_at` cannot be changed
+- `$append` creates arrays automatically if they don't exist
+- `$append` prevents duplicate entries
+- `$remove` safely handles missing fields
+- Operations execute in order: remove → append → regular updates
 
 ---
 
@@ -357,7 +477,8 @@ Update multiple documents in one request.
 
 **Endpoint:** `POST /collections/{collection_name}/batch/documents/update`
 
-**Example:**
+#### Basic Batch Update
+
 ```bash
 curl -X POST https://api.cocobase.buzz/collections/users/batch/documents/update \
   -H "X-API-Key: your-api-key" \
@@ -382,6 +503,61 @@ curl -X POST https://api.cocobase.buzz/collections/users/batch/documents/update 
   "count": 2
 }
 ```
+
+#### Batch Update with Array Operations (NEW!)
+
+Update multiple documents with array operations in a single request:
+
+```bash
+curl -X POST https://api.cocobase.buzz/collections/posts/batch/documents/update \
+  -H "X-API-Key": your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "updates": {
+      "post_123": {
+        "data": {"views": 200},
+        "$append": {"likes": ["user_999"]},
+        "$remove": {"likes": ["user_111"]}
+      },
+      "post_456": {
+        "$append": {"likes": ["user_999"], "tags": ["trending"]}
+      },
+      "post_789": {
+        "data": {"status": "published"}
+      }
+    }
+  }'
+```
+
+**JavaScript Example - Batch Like Multiple Posts:**
+```javascript
+await fetch('https://api.cocobase.buzz/collections/posts/batch/documents/update', {
+  method: 'POST',
+  headers: {
+    'X-API-Key': 'your-api-key',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    updates: {
+      'post_123': {
+        $append: { likes: ['user_456'] }
+      },
+      'post_456': {
+        $append: { likes: ['user_456'] }
+      },
+      'post_789': {
+        $append: { likes: ['user_456'] }
+      }
+    }
+  })
+});
+```
+
+**Use Cases:**
+- Like/unlike multiple posts at once
+- Add tags to multiple documents
+- Manage permissions across multiple resources
+- Bulk update member lists
 
 ### Batch Delete
 

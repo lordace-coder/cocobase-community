@@ -222,6 +222,80 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=referred_by" \
   -H "X-API-Key: your-api-key"
 ```
 
+### Explicit Source Specification (NEW!)
+
+By default, CocoBase auto-detects whether to fetch from AppUser or a collection by pluralizing the field name. You can override this behavior to explicitly specify the source.
+
+**Syntax:** `populate=field:source`
+
+#### Force AppUser Model
+
+```bash
+# Force fetch from AppUser model (not from a collection)
+curl "https://api.cocobase.buzz/collections/posts/documents?populate=author:appuser" \
+  -H "X-API-Key: your-api-key"
+```
+
+Use this when:
+- You have a collection named "users" that conflicts with AppUser
+- You want to ensure it fetches from the system users table
+- You need guaranteed AppUser data (email, created_at, roles)
+
+#### Force Specific Collection
+
+```bash
+# Force fetch from "members" collection instead of pluralizing to "users"
+curl "https://api.cocobase.buzz/collections/teams/documents?populate=user:members" \
+  -H "X-API-Key: your-api-key"
+
+# Force fetch from "posts" collection
+curl "https://api.cocobase.buzz/collections/comments/documents?populate=author:posts" \
+  -H "X-API-Key: your-api-key"
+```
+
+Use this when:
+- Your collection name doesn't follow standard pluralization
+- You want to avoid relying on auto-pluralization
+- You have custom naming conventions
+
+**Examples:**
+
+```bash
+# Auto-detect (default) - pluralizes "author" to "authors" collection
+GET /collections/posts/documents?populate=author
+
+# Force AppUser
+GET /collections/posts/documents?populate=author:appuser
+
+# Force specific collection "team_members"
+GET /collections/projects/documents?populate=owner:team_members
+```
+
+**JavaScript:**
+```javascript
+// Auto-detect
+const params = new URLSearchParams({
+  populate: 'author'
+});
+
+// Force AppUser
+const params = new URLSearchParams({
+  populate: 'author:appuser'
+});
+
+// Force specific collection
+const params = new URLSearchParams({
+  populate: 'owner:team_members'
+});
+
+const response = await fetch(
+  `https://api.cocobase.buzz/collections/posts/documents?${params}`,
+  {
+    headers: { 'X-API-Key': 'your-api-key' }
+  }
+);
+```
+
 **Response:**
 ```json
 {

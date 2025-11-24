@@ -207,6 +207,98 @@ curl -X PATCH https://api.cocobase.buzz/auth-collections/user \
   }'
 ```
 
+### Array Operations on User Data (NEW!)
+
+Manage array fields in user data (like followers, interests, bookmarks) without replacing the entire array.
+
+#### Follow a User
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/auth-collections/user \
+  -H "Authorization: Bearer your-jwt-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "$append": {
+      "following": ["user_456"]
+    }
+  }'
+```
+
+#### Unfollow a User
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/auth-collections/user \
+  -H "Authorization: Bearer your-jwt-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "$remove": {
+      "following": ["user_456"]
+    }
+  }'
+```
+
+#### Combined Operations
+
+Update profile and manage arrays in one request:
+
+```bash
+curl -X PATCH https://api.cocobase.buzz/auth-collections/user \
+  -H "Authorization: Bearer your-jwt-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "newemail@example.com",
+    "data": {
+      "bio": "Updated bio"
+    },
+    "$append": {
+      "followers": ["user_789"],
+      "interests": ["programming", "ai"]
+    },
+    "$remove": {
+      "blocked_users": ["user_123"]
+    }
+  }'
+```
+
+**JavaScript Example - Follow/Unfollow:**
+```javascript
+// Follow a user
+await fetch('https://api.cocobase.buzz/auth-collections/user', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    $append: {
+      following: ['user_456']
+    }
+  })
+});
+
+// Unfollow a user
+await fetch('https://api.cocobase.buzz/auth-collections/user', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    $remove: {
+      following: ['user_456']
+    }
+  })
+});
+```
+
+**Notes:**
+- Array operations work on fields within the `data` JSONB field
+- Top-level fields like `email` are updated normally
+- `$append` creates arrays automatically if they don't exist
+- `$append` prevents duplicate entries
+- `$remove` safely handles missing fields
+- Operations execute in order: remove → append → regular updates
+
 ### Update with File Upload
 
 ```bash

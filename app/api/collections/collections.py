@@ -254,6 +254,7 @@ async def create_new_document(
         db.commit()
         db.refresh(_collection)
 
+    # Verify permissions after collection is retrieved/created
     can_access_collection(_collection, "create", user)
 
     try:
@@ -1044,7 +1045,42 @@ def batch_update_documents(
     user: AppUser = Depends(get_app_user),
 ):
     """
-    Update multiple documents at once.
+    Update multiple documents at once with support for array operations.
+
+    **Array Operations Support:**
+
+    1. **Append items to array:**
+    ```json
+    {
+      "doc-id-1": {
+        "data": {"name": "Updated"},
+        "$append": {"tags": ["new-tag"], "member_ids": ["user-123"]}
+      }
+    }
+    ```
+
+    2. **Remove items from array:**
+    ```json
+    {
+      "doc-id-1": {
+        "$remove": {"tags": ["old-tag"], "member_ids": ["user-456"]}
+      }
+    }
+    ```
+
+    3. **Combine operations:**
+    ```json
+    {
+      "doc-id-1": {
+        "data": {"status": "active"},
+        "$append": {"likes": ["user-123"]},
+        "$remove": {"likes": ["user-456"]}
+      },
+      "doc-id-2": {
+        "data": {"status": "inactive"}
+      }
+    }
+    ```
 
     Optimization: Batch update to reduce queries.
     """
@@ -1069,12 +1105,52 @@ def batch_update_documents(
     updated_count = 0
     for doc in documents:
         if doc.id in payload.updates:
-            update_data = payload.updates[doc.id]
-            if "data" in update_data:
-                existing_data = dict(doc.data) if doc.data else {}
-                existing_data.update(update_data["data"])
-                doc.data = existing_data
-                updated_count += 1
+            update_payload = payload.updates[doc.id]
+
+            # Start with existing data
+            existing_data = dict(doc.data) if doc.data else {}
+
+            # Extract special operations
+            append_ops = update_payload.pop("$append", {})
+            remove_ops = update_payload.pop("$remove", {})
+            update_data = update_payload.get("data", {})
+
+            # 1. Apply REMOVE operations first
+            for field, items_to_remove in remove_ops.items():
+                if field in existing_data and isinstance(existing_data[field], list):
+                    # Ensure items_to_remove is a list
+                    if not isinstance(items_to_remove, list):
+                        items_to_remove = [items_to_remove]
+                    # Remove items
+                    existing_data[field] = [
+                        item for item in existing_data[field]
+                        if item not in items_to_remove
+                    ]
+
+            # 2. Apply APPEND operations
+            for field, items_to_add in append_ops.items():
+                # Ensure items_to_add is a list
+                if not isinstance(items_to_add, list):
+                    items_to_add = [items_to_add]
+
+                # Initialize field as array if it doesn't exist
+                if field not in existing_data:
+                    existing_data[field] = []
+                elif not isinstance(existing_data[field], list):
+                    # If field exists but is not a list, convert to list
+                    existing_data[field] = [existing_data[field]]
+
+                # Append new items (avoid duplicates)
+                for item in items_to_add:
+                    if item not in existing_data[field]:
+                        existing_data[field].append(item)
+
+            # 3. Merge regular updates
+            if update_data:
+                existing_data.update(update_data)
+
+            doc.data = existing_data
+            updated_count += 1
 
     db.commit()
 

@@ -35,7 +35,7 @@ def add_team_member(
     if not project:
         project = (
             db.query(Project)
-            .filter(Project.id == project_id, Project.owner == user.id)
+            .filter(Project.id == project_id, Project.user_id == user.id)
             .first()
         )
         if not project:
@@ -65,7 +65,7 @@ def remove_team_member(
     """
     project = (
         db.query(Project)
-        .filter(Project.id == project_id, Project.owner == user.id)
+        .filter(Project.id == project_id, Project.user_id == user.id)
         .first()
     )
     if not project:
