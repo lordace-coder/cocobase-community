@@ -71,15 +71,13 @@ class UserRelationshipHelper:
                                 if rid and rid in related_map
                             ]
                             if populated_items:
-                                user_dict["data"][
-                                    f"{rel_path}_populated"
-                                ] = populated_items
+                                # Add populated relationship inside data with _populated suffix
+                                user_dict["data"][f"{rel_path}_populated"] = populated_items
                         else:
                             # Single relationship
                             if related_value in related_map:
-                                user_dict["data"][f"{rel_path}_populated"] = (
-                                    related_map[related_value]
-                                )
+                                # Add populated relationship inside data with _populated suffix
+                                user_dict["data"][f"{rel_path}_populated"] = related_map[related_value]
 
         return users_data
 

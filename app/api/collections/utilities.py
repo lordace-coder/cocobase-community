@@ -670,11 +670,11 @@ class AutoRelationshipResolver:
         """Transform document with relationship population."""
         result = {
             "id": doc.id,
+            "data": doc.data or {},
             "created_at": doc.created_at.isoformat() if doc.created_at else None,
         }
 
-        # Add all data fields
-        result.update(doc.data)  # Populate relationships
+        # Populate relationships
         if populate:
             result = self._populate_relationships(result, populate, project_id)
 
@@ -772,6 +772,22 @@ class AutoRelationshipResolver:
         id_field = f"{field_name}_id"
         ids_field = f"{field_name}_ids"
 
+        # Access data from the data field
+        doc_data = doc.get("data", {})
+
+        print(f"\n{'='*60}")
+        print(f"DEBUG _populate_single_field:")
+        print(f"  field_name: {field_name}")
+        print(f"  id_field: {id_field}")
+        print(f"  ids_field: {ids_field}")
+        print(f"  force_source: {force_source}")
+        print(f"  target_collection: {target_collection}")
+        print(f"  doc_data keys: {list(doc_data.keys())}")
+        print(f"  id_field in doc_data: {id_field in doc_data}")
+        if id_field in doc_data:
+            print(f"  doc_data[{id_field}]: {doc_data[id_field]}")
+        print(f"{'='*60}\n")
+
         # Determine target collection name
         if target_collection:
             # Use explicit collection name provided
@@ -789,36 +805,67 @@ class AutoRelationshipResolver:
             # Auto-detect based on naming
             is_user_relation = self._is_system_collection(target_name)
 
-        # Case 1: belongs_to (field_id exists)
-        if id_field in doc and doc[id_field]:
-            if is_user_relation:
-                related = self._fetch_user(doc[id_field], nested_populates, project_id)
+        print(f"  target_name: {target_name}")
+        print(f"  is_user_relation: {is_user_relation}\n")
+
+        # Determine which field to check (try field_id first, then field itself)
+        field_to_check = None
+        field_value = None
+
+        # Case 1a: Check for field_id (e.g., author_id)
+        if id_field in doc_data and doc_data[id_field]:
+            field_to_check = id_field
+            field_value = doc_data[id_field]
+            print(f"  Found {id_field} with value: {field_value}")
+        # Case 1b: Check for field itself (e.g., author)
+        elif field_name in doc_data and doc_data[field_name]:
+            # Check if it's a single ID (string) or array
+            if isinstance(doc_data[field_name], list):
+                field_to_check = "array"
+                field_value = doc_data[field_name]
+                print(f"  Found {field_name} as array with {len(field_value)} items")
             else:
-                related = self._fetch_related_document(
-                    target_name, project_id, doc[id_field], nested_populates
-                )
+                field_to_check = field_name
+                field_value = doc_data[field_name]
+                print(f"  Found {field_name} with value: {field_value}")
+        # Case 2: Check for field_ids (e.g., author_ids)
+        elif ids_field in doc_data and doc_data[ids_field]:
+            field_to_check = "array"
+            field_value = doc_data[ids_field]
+            print(f"  Found {ids_field} as array with {len(field_value)} items")
 
-            if related:
-                doc[field_name] = related
-
-        # Case 2: has_many (field_ids exists)
-        elif ids_field in doc and doc[ids_field]:
-            if isinstance(doc[ids_field], list):
+        # Fetch and populate the relationship
+        if field_to_check and field_value:
+            if field_to_check == "array":
+                # Array of IDs
+                if isinstance(field_value, list):
+                    if is_user_relation:
+                        related = self._fetch_users(
+                            field_value, nested_populates, project_id
+                        )
+                    else:
+                        related = self._fetch_related_documents(
+                            target_name, project_id, field_value, nested_populates
+                        )
+                    # Add populated data inside the data field with _populated suffix
+                    doc["data"][f"{field_name}_populated"] = related
+            else:
+                # Single ID
                 if is_user_relation:
-                    related = self._fetch_users(
-                        doc[ids_field], nested_populates, project_id
-                    )
+                    related = self._fetch_user(field_value, nested_populates, project_id)
                 else:
-                    related = self._fetch_related_documents(
-                        target_name, project_id, doc[ids_field], nested_populates
+                    related = self._fetch_related_document(
+                        target_name, project_id, field_value, nested_populates
                     )
-
-                doc[field_name] = related
-
-        # Case 3: Reverse relationship
+                if related:
+                    # Add populated data inside the data field with _populated suffix
+                    doc["data"][f"{field_name}_populated"] = related
         else:
+            # Case 3: Reverse relationship (no direct field found)
+            print(f"  No direct field found, checking reverse relationship...")
             if is_user_relation:
                 # Don't support reverse user relationships
+                print(f"  Skipping reverse relationship for user relation")
                 pass
             else:
                 singular = self._singularize(field_name)
@@ -827,7 +874,8 @@ class AutoRelationshipResolver:
                     field_name, project_id, foreign_key, doc["id"], nested_populates
                 )
                 if related:
-                    doc[field_name] = related
+                    # Add populated data inside the data field with _populated suffix
+                    doc["data"][f"{field_name}_populated"] = related
 
         return doc
 
@@ -844,22 +892,20 @@ class AutoRelationshipResolver:
         result = {
             "id": user.id,
             "email": user.email,
+            "data": user.data or {},
             "created_at": user.created_at.isoformat() if user.created_at else None,
         }
-
-        # Add data field if exists
-        if hasattr(user, "data") and user.data:
-            result.update(user.data)
 
         # Add roles if exists
         if hasattr(user, "roles") and user.roles:
             result["roles"] = user.roles
 
-        # DON'T include password!
-        result.pop("password", None)
+        # DON'T include password from data!
+        if "password" in result["data"]:
+            result["data"].pop("password")
 
         # Recursively populate nested (if user has relationships)
-        if nested_populates and hasattr(user, "data") and user.data:
+        if nested_populates:
             result = self._populate_relationships(result, nested_populates, project_id)
 
         return result
@@ -875,18 +921,18 @@ class AutoRelationshipResolver:
             result = {
                 "id": user.id,
                 "email": user.email,
+                "data": user.data or {},
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             }
-
-            if hasattr(user, "data") and user.data:
-                result.update(user.data)
 
             if hasattr(user, "roles") and user.roles:
                 result["roles"] = user.roles
 
-            result.pop("password", None)
+            # DON'T include password from data!
+            if "password" in result["data"]:
+                result["data"].pop("password")
 
-            if nested_populates and hasattr(user, "data") and user.data:
+            if nested_populates:
                 result = self._populate_relationships(
                     result, nested_populates, project_id
                 )
@@ -916,7 +962,11 @@ class AutoRelationshipResolver:
         if not doc:
             return None
 
-        result = {"id": doc.id, **doc.data}
+        result = {
+            "id": doc.id,
+            "data": doc.data or {},
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        }
 
         if nested_populates:
             result = self._populate_relationships(result, nested_populates, project_id)
@@ -943,7 +993,11 @@ class AutoRelationshipResolver:
 
         results = []
         for doc in docs:
-            result = {"id": doc.id, **doc.data}
+            result = {
+                "id": doc.id,
+                "data": doc.data or {},
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            }
             if nested_populates:
                 result = self._populate_relationships(
                     result, nested_populates, project_id
@@ -976,7 +1030,11 @@ class AutoRelationshipResolver:
 
         results = []
         for doc in docs:
-            result = {"id": doc.id, **doc.data}
+            result = {
+                "id": doc.id,
+                "data": doc.data or {},
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            }
             if nested_populates:
                 result = self._populate_relationships(
                     result, nested_populates, project_id
