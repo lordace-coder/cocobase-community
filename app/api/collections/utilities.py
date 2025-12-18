@@ -14,32 +14,24 @@ from app.models.collections import Collection, Document
 
 
 def build_comparison_map():
-    """Build comparison operators with proper JSON handling."""
+    """Build comparison operators with proper JSON handling.
+
+    NOTE: Columns passed to these lambdas are expected to be already cast to text via .astext
+    """
     return {
-        "lte": lambda col, val: cast(col.astext, Integer) <= val,
-        "gte": lambda col, val: cast(col.astext, Integer) >= val,
-        "lt": lambda col, val: cast(col.astext, Integer) < val,
-        "gt": lambda col, val: cast(col.astext, Integer) > val,
-        # FIXED: Handle both string and native JSON comparison
-        "eq": lambda col, val: or_(
-            col.astext == str(val),
-            cast(col, String) == str(val),  # Cast comparison
-        ),
-        "ne": lambda col, val: and_(
-            col.astext != str(val), cast(col, String) != str(val)
-        ),
-        "contains": lambda col, val: col.astext.ilike(f"%{val}%"),
-        "startswith": lambda col, val: col.astext.ilike(f"{val}%"),
-        "endswith": lambda col, val: col.astext.ilike(f"%{val}"),
-        # FIXED: Handle comma-separated values and quoted strings
-        "in": lambda col, val: or_(
-            col.astext.in_([v.strip() for v in val.split(",")]),
-            col.in_([v.strip() for v in val.split(",")]),
-        ),
-        "notin": lambda col, val: and_(
-            ~col.astext.in_([v.strip() for v in val.split(",")]),
-            ~col.in_([v.strip() for v in val.split(",")]),
-        ),
+        "lte": lambda col, val: cast(col, Integer) <= val,
+        "gte": lambda col, val: cast(col, Integer) >= val,
+        "lt": lambda col, val: cast(col, Integer) < val,
+        "gt": lambda col, val: cast(col, Integer) > val,
+        # col is already text (via .astext), so compare directly
+        "eq": lambda col, val: col == str(val),
+        "ne": lambda col, val: col != str(val),
+        "contains": lambda col, val: col.ilike(f"%{val}%"),
+        "startswith": lambda col, val: col.ilike(f"{val}%"),
+        "endswith": lambda col, val: col.ilike(f"%{val}"),
+        # For IN/NOTIN, split comma-separated values and compare as text
+        "in": lambda col, val: col.in_([v.strip() for v in val.split(",")]),
+        "notin": lambda col, val: ~col.in_([v.strip() for v in val.split(",")]),
         "isnull": lambda col, val: (
             col.is_(None) if val.lower() in ("true", "1") else col.isnot(None)
         ),
@@ -95,6 +87,7 @@ def parse_filter_expression(field_expr: str, value: str, operator: str = "eq"):
     - Better error handling
     - Debug logging
     - Type conversion for various operators
+    - Always use .astext to cast JSONB to text to avoid JSON syntax errors
 
     Args:
         field_expr: Field name (e.g., "age", "name", "user_id", "userId")
@@ -104,7 +97,9 @@ def parse_filter_expression(field_expr: str, value: str, operator: str = "eq"):
     Returns:
         SQLAlchemy filter expression or None
     """
-    json_col = Document.data[field_expr]
+    # CRITICAL FIX: Use .astext to convert JSONB to text IMMEDIATELY
+    # This ensures all downstream operations treat it as text, not JSON
+    json_col = Document.data[field_expr].astext
     comp_fn = comparison_map.get(operator)
 
     if not comp_fn:
@@ -357,8 +352,6 @@ def extract_field_and_operator(field_with_op: str) -> tuple[str, str]:
         return field_with_op, "eq"
 
 
-
-
 class AutoRelationshipResolver:
     """
     Automatically resolve relationships for both Users and Collection Documents.
@@ -591,10 +584,12 @@ class AutoRelationshipResolver:
             subquery = self.db.query(AppUser.id).filter(filter_cond)
 
         # Apply to main query
+        # FIX: Use .astext to cast JSONB to text for proper IN comparison
+        # This ensures UUID strings are compared as text, not raw JSON
         query = query.filter(
             or_(
                 Document.data[id_field].astext.in_(subquery),
-                Document.data[ids_field].op("?|")(func.array(subquery.subquery())),
+                Document.data[ids_field].astext.in_(subquery),
             )
         )
 
@@ -651,10 +646,13 @@ class AutoRelationshipResolver:
         )
 
         # Apply to main query
+        # FIX: Use .astext to cast JSONB to text for proper IN comparison
+        # This ensures UUID strings are compared as text, not raw JSON
         query = query.filter(
             or_(
                 Document.data[id_field].astext.in_(subquery),
-                Document.data[ids_field].op("?|")(func.array(subquery.subquery())),
+                # For array fields, check if any ID in the array matches subquery results
+                Document.data[ids_field].astext.in_(subquery),
             )
         )
 
@@ -725,7 +723,12 @@ class AutoRelationshipResolver:
                 # Populate parent first
                 if parent_field not in populate_map or not doc.get(parent_field):
                     doc = self._populate_single_field(
-                        doc, parent_field, project_id, [], force_source, target_collection
+                        doc,
+                        parent_field,
+                        project_id,
+                        [],
+                        force_source,
+                        target_collection,
                     )
 
                 # Then populate nested
@@ -745,7 +748,12 @@ class AutoRelationshipResolver:
             else:
                 # Simple field population
                 doc = self._populate_single_field(
-                    doc, actual_field, project_id, nested_populates, force_source, target_collection
+                    doc,
+                    actual_field,
+                    project_id,
+                    nested_populates,
+                    force_source,
+                    target_collection,
                 )
 
         return doc
@@ -775,19 +783,6 @@ class AutoRelationshipResolver:
         # Access data from the data field
         doc_data = doc.get("data", {})
 
-        print(f"\n{'='*60}")
-        print(f"DEBUG _populate_single_field:")
-        print(f"  field_name: {field_name}")
-        print(f"  id_field: {id_field}")
-        print(f"  ids_field: {ids_field}")
-        print(f"  force_source: {force_source}")
-        print(f"  target_collection: {target_collection}")
-        print(f"  doc_data keys: {list(doc_data.keys())}")
-        print(f"  id_field in doc_data: {id_field in doc_data}")
-        if id_field in doc_data:
-            print(f"  doc_data[{id_field}]: {doc_data[id_field]}")
-        print(f"{'='*60}\n")
-
         # Determine target collection name
         if target_collection:
             # Use explicit collection name provided
@@ -805,9 +800,6 @@ class AutoRelationshipResolver:
             # Auto-detect based on naming
             is_user_relation = self._is_system_collection(target_name)
 
-        print(f"  target_name: {target_name}")
-        print(f"  is_user_relation: {is_user_relation}\n")
-
         # Determine which field to check (try field_id first, then field itself)
         field_to_check = None
         field_value = None
@@ -816,23 +808,19 @@ class AutoRelationshipResolver:
         if id_field in doc_data and doc_data[id_field]:
             field_to_check = id_field
             field_value = doc_data[id_field]
-            print(f"  Found {id_field} with value: {field_value}")
         # Case 1b: Check for field itself (e.g., author)
         elif field_name in doc_data and doc_data[field_name]:
             # Check if it's a single ID (string) or array
             if isinstance(doc_data[field_name], list):
                 field_to_check = "array"
                 field_value = doc_data[field_name]
-                print(f"  Found {field_name} as array with {len(field_value)} items")
             else:
                 field_to_check = field_name
                 field_value = doc_data[field_name]
-                print(f"  Found {field_name} with value: {field_value}")
         # Case 2: Check for field_ids (e.g., author_ids)
         elif ids_field in doc_data and doc_data[ids_field]:
             field_to_check = "array"
             field_value = doc_data[ids_field]
-            print(f"  Found {ids_field} as array with {len(field_value)} items")
 
         # Fetch and populate the relationship
         if field_to_check and field_value:
@@ -847,25 +835,25 @@ class AutoRelationshipResolver:
                         related = self._fetch_related_documents(
                             target_name, project_id, field_value, nested_populates
                         )
-                    # Add populated data inside the data field with _populated suffix
-                    doc["data"][f"{field_name}_populated"] = related
+                    # Add populated data inside the data field with  suffix
+                    doc["data"][f"{field_name}"] = related
             else:
                 # Single ID
                 if is_user_relation:
-                    related = self._fetch_user(field_value, nested_populates, project_id)
+                    related = self._fetch_user(
+                        field_value, nested_populates, project_id
+                    )
                 else:
                     related = self._fetch_related_document(
                         target_name, project_id, field_value, nested_populates
                     )
                 if related:
-                    # Add populated data inside the data field with _populated suffix
-                    doc["data"][f"{field_name}_populated"] = related
+                    # Add populated data inside the data field with  suffix
+                    doc["data"][f"{field_name}"] = related
         else:
             # Case 3: Reverse relationship (no direct field found)
-            print(f"  No direct field found, checking reverse relationship...")
             if is_user_relation:
                 # Don't support reverse user relationships
-                print(f"  Skipping reverse relationship for user relation")
                 pass
             else:
                 singular = self._singularize(field_name)
@@ -874,8 +862,8 @@ class AutoRelationshipResolver:
                     field_name, project_id, foreign_key, doc["id"], nested_populates
                 )
                 if related:
-                    # Add populated data inside the data field with _populated suffix
-                    doc["data"][f"{field_name}_populated"] = related
+                    # Add populated data inside the data field with  suffix
+                    doc["data"][f"{field_name}"] = related
 
         return doc
 

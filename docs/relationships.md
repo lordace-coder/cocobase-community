@@ -21,6 +21,7 @@ Link documents and users together to create relational data structures.
 ## Overview
 
 CocoBase supports relationships between:
+
 - **User → User** (followers, friends, referred_by)
 - **User → Document** (favorite posts, bookmarks)
 - **Document → Document** (comments on posts, product reviews)
@@ -115,6 +116,7 @@ curl -X PATCH https://api.cocobase.buzz/auth-collections/user \
 ```
 
 **JavaScript:**
+
 ```javascript
 // Follow a user
 const currentUser = await getCurrentUser(); // Assume this gets current user
@@ -122,33 +124,35 @@ const currentUser = await getCurrentUser(); // Assume this gets current user
 const currentFollowing = currentUser.data.following_ids || [];
 const newFollowing = [...currentFollowing, "user_to_follow"];
 
-await fetch('https://api.cocobase.buzz/auth-collections/user', {
-  method: 'PATCH',
+await fetch("https://api.cocobase.buzz/auth-collections/user", {
+  method: "PATCH",
   headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
     data: {
-      following_ids: newFollowing
-    }
-  })
+      following_ids: newFollowing,
+    },
+  }),
 });
 
 // Unfollow a user
-const updatedFollowing = currentFollowing.filter(id => id !== "user_to_unfollow");
+const updatedFollowing = currentFollowing.filter(
+  (id) => id !== "user_to_unfollow"
+);
 
-await fetch('https://api.cocobase.buzz/auth-collections/user', {
-  method: 'PATCH',
+await fetch("https://api.cocobase.buzz/auth-collections/user", {
+  method: "PATCH",
   headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
     data: {
-      following_ids: updatedFollowing
-    }
-  })
+      following_ids: updatedFollowing,
+    },
+  }),
 });
 ```
 
@@ -205,6 +209,7 @@ Instead of just getting IDs, you can **populate** relationships to get the full 
 ### Basic Population
 
 **Without Population:**
+
 ```json
 {
   "id": "user_123",
@@ -217,6 +222,7 @@ Instead of just getting IDs, you can **populate** relationships to get the full 
 ```
 
 **With Population:**
+
 ```bash
 curl "https://api.cocobase.buzz/auth-collections/users?populate=referred_by" \
   -H "X-API-Key: your-api-key"
@@ -237,6 +243,7 @@ curl "https://api.cocobase.buzz/collections/posts/documents?populate=author:appu
 ```
 
 Use this when:
+
 - You have a collection named "users" that conflicts with AppUser
 - You want to ensure it fetches from the system users table
 - You need guaranteed AppUser data (email, created_at, roles)
@@ -254,6 +261,7 @@ curl "https://api.cocobase.buzz/collections/comments/documents?populate=author:p
 ```
 
 Use this when:
+
 - Your collection name doesn't follow standard pluralization
 - You want to avoid relying on auto-pluralization
 - You have custom naming conventions
@@ -272,31 +280,33 @@ GET /collections/projects/documents?populate=owner:team_members
 ```
 
 **JavaScript:**
+
 ```javascript
 // Auto-detect
 const params = new URLSearchParams({
-  populate: 'author'
+  populate: "author",
 });
 
 // Force AppUser
 const params = new URLSearchParams({
-  populate: 'author:appuser'
+  populate: "author:appuser",
 });
 
 // Force specific collection
 const params = new URLSearchParams({
-  populate: 'owner:team_members'
+  populate: "owner:team_members",
 });
 
 const response = await fetch(
   `https://api.cocobase.buzz/collections/posts/documents?${params}`,
   {
-    headers: { 'X-API-Key': 'your-api-key' }
+    headers: { "X-API-Key": "your-api-key" },
   }
 );
 ```
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -306,7 +316,7 @@ const response = await fetch(
       "data": {
         "username": "johndoe",
         "referred_by": "user_456",
-        "referred_by_populated": {
+        "referred_by": {
           "id": "user_456",
           "email": "alice@example.com",
           "data": {
@@ -329,15 +339,16 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=referred_by&popu
 ```
 
 **JavaScript:**
+
 ```javascript
 const params = new URLSearchParams({
-  populate: ['referred_by', 'followers_ids']
+  populate: ["referred_by", "followers_ids"],
 });
 
 const response = await fetch(
   `https://api.cocobase.buzz/auth-collections/users?${params}`,
   {
-    headers: { 'X-API-Key': 'your-api-key' }
+    headers: { "X-API-Key": "your-api-key" },
   }
 );
 
@@ -345,6 +356,7 @@ const result = await response.json();
 ```
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -354,13 +366,13 @@ const result = await response.json();
       "data": {
         "username": "johndoe",
         "referred_by": "user_456",
-        "referred_by_populated": {
+        "referred_by": {
           "id": "user_456",
           "email": "alice@example.com",
           "data": { "username": "alice" }
         },
         "followers_ids": ["user_789", "user_012"],
-        "followers_ids_populated": [
+        "followers_ids": [
           {
             "id": "user_789",
             "email": "bob@example.com",
@@ -389,6 +401,7 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=followers_ids" \
 ```
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -396,7 +409,7 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=followers_ids" \
       "id": "user_123",
       "data": {
         "followers_ids": ["user_456", "user_789"],
-        "followers_ids_populated": [
+        "followers_ids": [
           {
             "id": "user_456",
             "email": "alice@example.com",
@@ -421,6 +434,7 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=followers_ids" \
 ### Follow System
 
 **Data Structure:**
+
 ```json
 {
   "id": "user_123",
@@ -434,18 +448,21 @@ curl "https://api.cocobase.buzz/auth-collections/users?populate=followers_ids" \
 ```
 
 **Get User's Followers:**
+
 ```bash
 curl "https://api.cocobase.buzz/auth-collections/users/user_123?populate=followers_ids" \
   -H "X-API-Key: your-api-key"
 ```
 
 **Get User's Following:**
+
 ```bash
 curl "https://api.cocobase.buzz/auth-collections/users/user_123?populate=following_ids" \
   -H "X-API-Key: your-api-key"
 ```
 
 **Find Who Follows a User:**
+
 ```bash
 # Find all users who have "user_123" in their following list
 curl "https://api.cocobase.buzz/auth-collections/users?data.following_ids_array_contains=user_123" \
@@ -453,6 +470,7 @@ curl "https://api.cocobase.buzz/auth-collections/users?data.following_ids_array_
 ```
 
 **JavaScript Follow/Unfollow:**
+
 ```javascript
 class FollowSystem {
   constructor(apiKey, token) {
@@ -462,11 +480,11 @@ class FollowSystem {
 
   async getCurrentUser() {
     const response = await fetch(
-      'https://api.cocobase.buzz/auth-collections/user',
+      "https://api.cocobase.buzz/auth-collections/user",
       {
         headers: {
-          'Authorization': `Bearer ${this.token}`
-        }
+          Authorization: `Bearer ${this.token}`,
+        },
       }
     );
     return await response.json();
@@ -477,21 +495,21 @@ class FollowSystem {
     const following = currentUser.data.following_ids || [];
 
     if (following.includes(userIdToFollow)) {
-      console.log('Already following');
+      console.log("Already following");
       return;
     }
 
-    await fetch('https://api.cocobase.buzz/auth-collections/user', {
-      method: 'PATCH',
+    await fetch("https://api.cocobase.buzz/auth-collections/user", {
+      method: "PATCH",
       headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         data: {
-          following_ids: [...following, userIdToFollow]
-        }
-      })
+          following_ids: [...following, userIdToFollow],
+        },
+      }),
     });
   }
 
@@ -499,17 +517,17 @@ class FollowSystem {
     const currentUser = await this.getCurrentUser();
     const following = currentUser.data.following_ids || [];
 
-    await fetch('https://api.cocobase.buzz/auth-collections/user', {
-      method: 'PATCH',
+    await fetch("https://api.cocobase.buzz/auth-collections/user", {
+      method: "PATCH",
       headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         data: {
-          following_ids: following.filter(id => id !== userIdToUnfollow)
-        }
-      })
+          following_ids: following.filter((id) => id !== userIdToUnfollow),
+        },
+      }),
     });
   }
 
@@ -518,12 +536,12 @@ class FollowSystem {
       `https://api.cocobase.buzz/auth-collections/users/${userId}?populate=followers_ids`,
       {
         headers: {
-          'X-API-Key': this.apiKey
-        }
+          "X-API-Key": this.apiKey,
+        },
       }
     );
     const user = await response.json();
-    return user.data.followers_ids_populated || [];
+    return user.data.followers_ids || [];
   }
 
   async getFollowing(userId) {
@@ -531,29 +549,30 @@ class FollowSystem {
       `https://api.cocobase.buzz/auth-collections/users/${userId}?populate=following_ids`,
       {
         headers: {
-          'X-API-Key': this.apiKey
-        }
+          "X-API-Key": this.apiKey,
+        },
       }
     );
     const user = await response.json();
-    return user.data.following_ids_populated || [];
+    return user.data.following_ids || [];
   }
 }
 
 // Usage
-const followSystem = new FollowSystem('your-api-key', userToken);
+const followSystem = new FollowSystem("your-api-key", userToken);
 
 // Follow a user
-await followSystem.follow('user_456');
+await followSystem.follow("user_456");
 
 // Get followers
-const followers = await followSystem.getFollowers('user_123');
-console.log('Followers:', followers);
+const followers = await followSystem.getFollowers("user_123");
+console.log("Followers:", followers);
 ```
 
 ### Referral System
 
 **Data Structure:**
+
 ```json
 {
   "id": "user_123",
@@ -566,6 +585,7 @@ console.log('Followers:', followers);
 ```
 
 **Sign Up with Referral:**
+
 ```bash
 curl -X POST https://api.cocobase.buzz/auth-collections/signup \
   -H "X-API-Key: your-api-key" \
@@ -581,25 +601,28 @@ curl -X POST https://api.cocobase.buzz/auth-collections/signup \
 ```
 
 **Get User Who Referred Me:**
+
 ```bash
 curl "https://api.cocobase.buzz/auth-collections/user?populate=referred_by" \
   -H "Authorization: Bearer user-token"
 ```
 
 **Get All Users I Referred:**
+
 ```bash
 curl "https://api.cocobase.buzz/auth-collections/users?data.referred_by=user_123" \
   -H "X-API-Key: your-api-key"
 ```
 
 **JavaScript:**
+
 ```javascript
 async function getReferralStats(apiKey, userId) {
   // Get the user who referred this user
   const userResponse = await fetch(
     `https://api.cocobase.buzz/auth-collections/users/${userId}?populate=referred_by`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const user = await userResponse.json();
@@ -608,27 +631,28 @@ async function getReferralStats(apiKey, userId) {
   const referralsResponse = await fetch(
     `https://api.cocobase.buzz/auth-collections/users?data.referred_by=${userId}`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const referrals = await referralsResponse.json();
 
   return {
-    referredBy: user.data.referred_by_populated,
+    referredBy: user.data.referred_by,
     referralCount: referrals.total,
-    referrals: referrals.data
+    referrals: referrals.data,
   };
 }
 
 // Usage
-const stats = await getReferralStats('your-api-key', 'user_123');
-console.log('Referred by:', stats.referredBy?.data?.username);
-console.log('Total referrals:', stats.referralCount);
+const stats = await getReferralStats("your-api-key", "user_123");
+console.log("Referred by:", stats.referredBy?.data?.username);
+console.log("Total referrals:", stats.referralCount);
 ```
 
 ### Friends System
 
 **Data Structure:**
+
 ```json
 {
   "id": "user_123",
@@ -642,23 +666,24 @@ console.log('Total referrals:', stats.referralCount);
 ```
 
 **Send Friend Request:**
+
 ```javascript
 async function sendFriendRequest(token, targetUserId) {
   // Add to current user's pending requests
   const currentUser = await getCurrentUser(token);
   const pending = currentUser.data.pending_friend_requests || [];
 
-  await fetch('https://api.cocobase.buzz/auth-collections/user', {
-    method: 'PATCH',
+  await fetch("https://api.cocobase.buzz/auth-collections/user", {
+    method: "PATCH",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       data: {
-        pending_friend_requests: [...pending, targetUserId]
-      }
-    })
+        pending_friend_requests: [...pending, targetUserId],
+      },
+    }),
   });
 }
 
@@ -667,23 +692,23 @@ async function acceptFriendRequest(token, requesterId) {
 
   // Remove from pending
   const pending = currentUser.data.pending_friend_requests || [];
-  const updatedPending = pending.filter(id => id !== requesterId);
+  const updatedPending = pending.filter((id) => id !== requesterId);
 
   // Add to friends
   const friends = currentUser.data.friend_ids || [];
 
-  await fetch('https://api.cocobase.buzz/auth-collections/user', {
-    method: 'PATCH',
+  await fetch("https://api.cocobase.buzz/auth-collections/user", {
+    method: "PATCH",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       data: {
         friend_ids: [...friends, requesterId],
-        pending_friend_requests: updatedPending
-      }
-    })
+        pending_friend_requests: updatedPending,
+      },
+    }),
   });
 }
 ```
@@ -758,19 +783,19 @@ Cache frequently accessed relationships:
 const cache = new Map();
 
 async function getUserWithRelationships(userId, populate) {
-  const cacheKey = `${userId}:${populate.join(',')}`;
+  const cacheKey = `${userId}:${populate.join(",")}`;
 
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
 
   const params = new URLSearchParams();
-  populate.forEach(field => params.append('populate', field));
+  populate.forEach((field) => params.append("populate", field));
 
   const response = await fetch(
     `https://api.cocobase.buzz/auth-collections/users/${userId}?${params}`,
     {
-      headers: { 'X-API-Key': 'your-api-key' }
+      headers: { "X-API-Key": "your-api-key" },
     }
   );
 
@@ -790,13 +815,13 @@ async function getUserWithRelationships(userId, populate) {
 ```javascript
 async function getSocialProfile(apiKey, userId) {
   const params = new URLSearchParams({
-    populate: ['followers_ids', 'following_ids', 'friend_ids']
+    populate: ["followers_ids", "following_ids", "friend_ids"],
   });
 
   const response = await fetch(
     `https://api.cocobase.buzz/auth-collections/users/${userId}?${params}`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
 
@@ -806,23 +831,23 @@ async function getSocialProfile(apiKey, userId) {
     user: {
       id: user.id,
       username: user.data.username,
-      email: user.email
+      email: user.email,
     },
-    followers: user.data.followers_ids_populated || [],
-    following: user.data.following_ids_populated || [],
-    friends: user.data.friend_ids_populated || [],
+    followers: user.data.followers_ids || [],
+    following: user.data.following_ids || [],
+    friends: user.data.friend_ids || [],
     stats: {
       followersCount: (user.data.followers_ids || []).length,
       followingCount: (user.data.following_ids || []).length,
-      friendsCount: (user.data.friend_ids || []).length
-    }
+      friendsCount: (user.data.friend_ids || []).length,
+    },
   };
 }
 
 // Usage
-const profile = await getSocialProfile('your-api-key', 'user_123');
-console.log('Followers:', profile.followers);
-console.log('Stats:', profile.stats);
+const profile = await getSocialProfile("your-api-key", "user_123");
+console.log("Followers:", profile.followers);
+console.log("Stats:", profile.stats);
 ```
 
 ### Blog with Comments
@@ -833,7 +858,7 @@ async function getPostWithComments(apiKey, postId) {
   const postResponse = await fetch(
     `https://api.cocobase.buzz/collections/posts/documents/${postId}`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const post = await postResponse.json();
@@ -842,7 +867,7 @@ async function getPostWithComments(apiKey, postId) {
   const commentsResponse = await fetch(
     `https://api.cocobase.buzz/collections/comments/documents?post_id=${postId}`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const comments = await commentsResponse.json();
@@ -850,7 +875,7 @@ async function getPostWithComments(apiKey, postId) {
   return {
     post,
     comments: comments.data,
-    commentCount: comments.total
+    commentCount: comments.total,
   };
 }
 ```
@@ -863,7 +888,7 @@ async function getProductWithReviews(apiKey, productId) {
   const productResponse = await fetch(
     `https://api.cocobase.buzz/collections/products/documents/${productId}`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const product = await productResponse.json();
@@ -872,21 +897,22 @@ async function getProductWithReviews(apiKey, productId) {
   const reviewsResponse = await fetch(
     `https://api.cocobase.buzz/collections/reviews/documents?product_id=${productId}&sort=created_at&order=desc&limit=10`,
     {
-      headers: { 'X-API-Key': apiKey }
+      headers: { "X-API-Key": apiKey },
     }
   );
   const reviews = await reviewsResponse.json();
 
   // Calculate average rating
-  const avgRating = reviews.data.reduce((sum, r) => sum + r.rating, 0) / reviews.total;
+  const avgRating =
+    reviews.data.reduce((sum, r) => sum + r.rating, 0) / reviews.total;
 
   return {
     product,
     reviews: reviews.data,
     stats: {
       totalReviews: reviews.total,
-      averageRating: avgRating.toFixed(1)
-    }
+      averageRating: avgRating.toFixed(1),
+    },
   };
 }
 ```

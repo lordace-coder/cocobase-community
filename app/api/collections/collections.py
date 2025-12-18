@@ -876,8 +876,8 @@ async def upload_file_to_project(
         check_storage_limit(proj[0].id, file_size, db)
 
         # Upload file
-        file_url = handle_file_upload(
-            file_content, proj[0].id, file.filename, directory
+        file_url = await handle_file_upload(
+            file_content, proj[0].id, file.filename, directory, db
         )
 
         return {

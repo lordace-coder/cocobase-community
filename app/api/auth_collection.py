@@ -26,10 +26,14 @@ from app.models.app_client import AppUser
 from app.services.email import notify_limit_reached, notify_limit_warning
 from app.storage.storage import check_storage_limit, handle_file_upload
 import json
+import logging
 from app.services.integrations import IntegrationService
+
+logger = logging.getLogger(__name__)
 from app.services.jwt import create_app_user_token, decode_app_user_token
 from app.services.google_token_verifier import GoogleTokenVerifier
 from app.services.apple_token_verifier import AppleTokenVerifier
+from app.services.github_token_verifier import GitHubTokenVerifier
 from app.services.oauth_service import OAuthService
 from app.schemas.auth_collection import (
     AppTokenResponse,
@@ -958,6 +962,149 @@ def verify_apple_token(
             additional_data=additional_data,
         )
 
+        return result
+
+    except ValueError as e:
+        # Token verification failed
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # Re-raise HTTP exceptions from OAuth service
+        raise
+    except Exception as e:
+        # Unexpected error
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred during authentication: {str(e)}"
+        )
+
+
+# *GITHUB SIGN-IN (OAuth Token/Code Verification)
+class GitHubSignInRequest(BaseModel):
+    access_token: Optional[str] = None
+    code: Optional[str] = None
+    redirect_uri: Optional[str] = None
+    platform: Optional[str] = None  # 'web', 'mobile' - for analytics
+
+
+@router.post("/github-verify")
+def verify_github_token(
+    payload: GitHubSignInRequest,
+    proj: tuple[Project, User] = Depends(get_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Verify GitHub OAuth code/token and authenticate user.
+
+    This endpoint accepts EITHER:
+    - code + redirect_uri (exchanges code for token server-side - more secure)
+    - access_token (client already has token)
+
+    Args:
+        payload: GitHubSignInRequest with code OR access_token
+        proj: Project tuple from dependency
+        db: Database session
+
+    Returns:
+        {
+            "access_token": "jwt_token",
+            "user": {
+                "id": "user_id",
+                "email": "user@example.com",
+                "data": {...},
+                "oauth_provider": "github",
+                "created_at": "timestamp"
+            }
+        }
+
+    Raises:
+        HTTPException 400: If integration not enabled or token/code invalid
+        HTTPException 500: If server error occurs
+    """
+    project = proj[0]
+
+    # Validate payload
+    if not payload.access_token and not payload.code:
+        raise HTTPException(
+            status_code=400,
+            detail="Either 'access_token' or 'code' must be provided"
+        )
+
+    if payload.code and not payload.redirect_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="'redirect_uri' is required when using 'code'"
+        )
+
+    # Get integration settings
+    integration = IntegrationService(db)
+    GITHUB_INTEGRATION_ID = "cee2caf5-647d-46b9-bd6b-9f0ed80e74fb"  # Replace with actual UUID
+
+    project_integration: ProjectIntegration = integration.get_project_integration(
+        project.id,
+        GITHUB_INTEGRATION_ID,
+    )
+
+    if not project_integration or not project_integration.is_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub Sign-In integration is not enabled for this project",
+        )
+
+    config = dict(project_integration.config)
+
+    # Get required settings from project config
+    GITHUB_CLIENT_ID = config.get("GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET = config.get("GITHUB_CLIENT_SECRET")
+
+    if not GITHUB_CLIENT_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="GITHUB_CLIENT_ID is not configured for this project",
+        )
+
+    # If code is provided, we need the secret to exchange it
+    if payload.code and not GITHUB_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=400,
+            detail="GITHUB_CLIENT_SECRET is required for code exchange. Please configure it in integration settings or use access_token instead.",
+        )
+
+    try:
+        # Step 1: Get access_token (either directly or by exchanging code)
+        if payload.code:
+            # Exchange code for access_token (server-side, secure)
+            logger.info(f"Exchanging GitHub code for access token...")
+            verifier = GitHubTokenVerifier(GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET)
+            access_token = verifier.exchange_code_for_token(payload.code, payload.redirect_uri)
+            logger.info(f"Successfully exchanged code for access token")
+        else:
+            # Use provided access_token
+            logger.info(f"Using provided GitHub access token")
+            access_token = payload.access_token
+
+        # Step 2: Verify token and get user info
+        logger.info(f"Verifying GitHub token and fetching user info...")
+        verifier = GitHubTokenVerifier(GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET)
+        user_info = verifier.get_user_info(access_token)
+        logger.info(f"Successfully verified token for user: {user_info.get('email')}")
+
+        # Use OAuth service to find or create user
+        logger.info(f"Creating/finding user in database...")
+        oauth_service = OAuthService(db, project.id)
+        result = oauth_service.find_or_create_user(
+            email=user_info["email"],
+            oauth_id=user_info["oauth_id"],
+            provider="github",
+            name=user_info.get("name", ""),
+            picture=user_info.get("picture", ""),
+            additional_data={
+                "username": user_info.get("username", ""),
+                "bio": user_info.get("bio", ""),
+                "location": user_info.get("location", ""),
+                "company": user_info.get("company", ""),
+            },
+        )
+
+        logger.info(f"GitHub authentication successful. Returning result with access_token: {bool(result.get('access_token'))}")
         return result
 
     except ValueError as e:
