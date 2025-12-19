@@ -20,6 +20,17 @@ def generate_api_key():
     return secrets.token_urlsafe(30)
 
 
+def generate_orm_api_key(project_id: str) -> str:
+    """
+    Generate an ORM API key with the format:
+    coco_orm_<project_id>_<random_32_chars>
+
+    Example: coco_orm_901235c6-9564-4de0-bb40_8a7f3e9d2c1b4f6a8e5d7c9b3a1f2e4d
+    """
+    random_part = secrets.token_hex(16)  # 32 hex characters
+    return f"coco_orm_{project_id}_{random_part}"
+
+
 async def handle_webhook_call(
     url: str,
     data: dict,

@@ -19,6 +19,7 @@ from app.api import (
     collaborations,
     storage,
     health,
+    orm_api_keys,
 )
 
 from app.api.collections import collections
@@ -129,6 +130,7 @@ app.include_router(migrater.router)
 app.include_router(migrations.router)
 app.include_router(ai_assistant.router)
 app.include_router(analytics.router)
+app.include_router(orm_api_keys.router)
 
 # Create dashboard docs with all routes (for /_/docs)
 dashboard_app.include_router(user.router, tags=["Authentication"])
@@ -147,6 +149,7 @@ dashboard_app.include_router(migrater.router)
 dashboard_app.include_router(migrations.router)
 dashboard_app.include_router(ai_assistant.router)
 dashboard_app.include_router(analytics.router)
+dashboard_app.include_router(orm_api_keys.router)
 
 
 # Override OpenAPI schema for main app to only show public routes
