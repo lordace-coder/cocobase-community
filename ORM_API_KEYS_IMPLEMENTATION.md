@@ -32,7 +32,8 @@ coco_orm_901235c6-9564-4de0-bb40_8a7f3e9d2c1b4f6a8e5d7c9b3a1f2e4d
   - `expires_at` - Expiration date (nullable)
   - `is_active` - Active/deactivated status
   - `created_by` - Foreign key to users table
-  - `rate_limit` - Requests per minute (nullable, null = plan default)
+
+**Note:** Rate limits are determined by the project's pricing plan, not per-key.
 
 ### 2. Pydantic Schemas
 **File:** [app/schemas/orm_api_keys.py](app/schemas/orm_api_keys.py)
@@ -74,6 +75,9 @@ Base path: `/project/{project_id}/orm-keys`
    - Restore access to deactivated key
    - Validates expiration date
 
+8. **GET /rate-limit-info** - Get rate limit for project
+   - Returns the ORM API rate limit based on pricing plan
+
 ### 4. Utility Function
 **File:** [app/services/utils.py](app/services/utils.py)
 
@@ -108,14 +112,52 @@ CREATE TABLE orm_api_keys (
     last_used_at TIMESTAMP,
     expires_at TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
-    created_by VARCHAR NOT NULL REFERENCES users(id),
-    rate_limit INTEGER
+    created_by VARCHAR NOT NULL REFERENCES users(id)
 );
 
 CREATE INDEX idx_orm_keys_project ON orm_api_keys(project_id);
 CREATE INDEX idx_orm_keys_prefix ON orm_api_keys(key_prefix);
 CREATE INDEX idx_orm_keys_active ON orm_api_keys(is_active, project_id);
 ```
+
+## Rate Limiting by Pricing Plan
+
+Rate limits for ORM API keys are determined by the project's pricing plan, not individually per key. This ensures consistent performance and billing alignment.
+
+### Rate Limits per Plan
+
+| Plan ID | Plan Name   | Rate Limit (requests/minute) |
+|---------|-------------|------------------------------|
+| 1       | Free        | 100                          |
+| 2       | Starter     | 500                          |
+| 3       | Pro         | 2000                         |
+| 4       | Enterprise  | 5000                         |
+
+### Get Rate Limit Info
+
+```bash
+GET /project/{project_id}/orm-keys/rate-limit-info
+Authorization: Bearer {your_auth_token}
+```
+
+**Response:**
+```json
+{
+  "project_id": "proj-uuid",
+  "plan_id": 3,
+  "plan_name": "Pro",
+  "orm_rate_limit": 2000,
+  "requests_per_minute": 2000,
+  "note": "This rate limit applies to all ORM API keys for this project"
+}
+```
+
+### Pricing Plan Model Updates
+
+The `pricing_plans` table now includes an `orm_rate_limit` column:
+- If set, this value overrides the default rate limit
+- If NULL, the default rate limit for the plan ID is used
+- This allows for custom rate limits in special cases
 
 ## Permissions Structure
 
@@ -171,8 +213,7 @@ Content-Type: application/json
       "manage_roles": false
     }
   },
-  "expires_in_days": 90,
-  "rate_limit": 1000
+  "expires_in_days": 90
 }
 ```
 
@@ -241,17 +282,18 @@ Authorization: Bearer {your_auth_token}
 5. **User Tracking**: Tracks which user created each key
 6. **Expiration**: Optional expiration dates for keys
 7. **Activation Toggle**: Keys can be deactivated without deletion
-8. **Rate Limiting**: Per-key rate limits can be set
+8. **Rate Limiting**: Based on pricing plan (Free: 100/min, Starter: 500/min, Pro: 2000/min, Enterprise: 5000/min)
 
 ## Next Steps
 
 To use these ORM API keys in the actual ORM microservice:
 
 1. Implement key validation middleware
-2. Add rate limiting based on `rate_limit` field
+2. Add rate limiting based on project's pricing plan `orm_rate_limit`
 3. Enforce permissions from the `permissions` JSON
 4. Update `last_used_at` timestamp on each successful request
 5. Check `is_active` and `expires_at` before allowing access
+6. Query the project's plan to get the rate limit (or use DEFAULT_RATE_LIMITS)
 
 ## Migration Status
 

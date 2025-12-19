@@ -44,7 +44,6 @@ class ORMApiKey(Base):
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
-    rate_limit = Column(Integer, nullable=True)  # requests per minute, null = plan default
 
     # Relationships
     project = relationship("Project")

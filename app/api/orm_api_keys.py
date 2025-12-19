@@ -8,6 +8,7 @@ from app.core.dependencies import get_current_user, get_project_with_access
 from app.models.user import User
 from app.models.app_client import Project
 from app.models.orm_api_keys import ORMApiKey
+from app.models.pricing import get_current_plan
 from app.schemas.orm_api_keys import (
     ORMApiKeyCreate,
     ORMApiKeyCreateResponse,
@@ -20,6 +21,15 @@ router = APIRouter(
     prefix="/project/{project_id}/orm-keys",
     tags=["ORM API Keys"],
 )
+
+
+# Rate limit defaults per plan (requests per minute)
+DEFAULT_RATE_LIMITS = {
+    1: 100,   # Free plan
+    2: 500,   # Starter plan
+    3: 2000,  # Pro plan
+    4: 5000,  # Enterprise plan
+}
 
 
 @router.post("/", status_code=201, response_model=ORMApiKeyCreateResponse)
@@ -54,7 +64,6 @@ def create_orm_api_key(
         permissions=payload.permissions,
         expires_at=expires_at,
         created_by=user.id,
-        rate_limit=payload.rate_limit,
     )
 
     # Hash the key and store the prefix
@@ -75,7 +84,6 @@ def create_orm_api_key(
         created_at=orm_key.created_at,
         expires_at=orm_key.expires_at,
         is_active=orm_key.is_active,
-        rate_limit=orm_key.rate_limit,
     )
 
 
@@ -267,3 +275,37 @@ def activate_orm_api_key(
     db.refresh(orm_key)
 
     return orm_key
+
+
+@router.get("/rate-limit-info")
+def get_rate_limit_info(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Get the ORM API rate limit for this project based on its pricing plan.
+
+    Rate limits are determined by the project's subscription plan:
+    - Plan 1 (Free): 100 requests/minute
+    - Plan 2 (Starter): 500 requests/minute
+    - Plan 3 (Pro): 2000 requests/minute
+    - Plan 4 (Enterprise): 5000 requests/minute
+    """
+    # Verify project access
+    project = get_project_with_access(project_id, user, db)
+
+    # Get the current plan
+    plan = get_current_plan(project, db)
+
+    # Get rate limit from plan or use default
+    rate_limit = plan.orm_rate_limit or DEFAULT_RATE_LIMITS.get(plan.id, 100)
+
+    return {
+        "project_id": project_id,
+        "plan_id": plan.id,
+        "plan_name": plan.name,
+        "orm_rate_limit": rate_limit,
+        "requests_per_minute": rate_limit,
+        "note": "This rate limit applies to all ORM API keys for this project"
+    }

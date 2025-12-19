@@ -90,6 +90,7 @@ class PricingPlan(Base):
     max_storage_mb = Column(Integer)
     max_users = Column(Integer)
     max_cloud_functions = Column(Integer)
+    orm_rate_limit = Column(Integer)  # ORM API requests per minute
 
     # Features
     features = Column(JSON)

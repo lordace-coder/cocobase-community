@@ -18,7 +18,6 @@ class ORMApiKeyCreate(BaseModel):
         description="Granular permissions for the API key"
     )
     expires_in_days: Optional[int] = Field(None, description="Number of days until the key expires", ge=1)
-    rate_limit: Optional[int] = Field(None, description="Requests per minute (null = plan default)", ge=1)
 
     model_config = {
         "json_schema_extra": {
@@ -36,8 +35,7 @@ class ORMApiKeyCreate(BaseModel):
                         "manage_roles": False
                     }
                 },
-                "expires_in_days": 90,
-                "rate_limit": 1000
+                "expires_in_days": 90
             }
         }
     }
@@ -55,7 +53,6 @@ class ORMApiKeyResponse(BaseModel):
     expires_at: Optional[datetime]
     is_active: bool
     created_by: str
-    rate_limit: Optional[int]
 
     model_config = {"from_attributes": True}
 
@@ -71,7 +68,6 @@ class ORMApiKeyCreateResponse(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime]
     is_active: bool
-    rate_limit: Optional[int]
 
     model_config = {
         "from_attributes": True,
@@ -88,8 +84,7 @@ class ORMApiKeyCreateResponse(BaseModel):
                 },
                 "created_at": "2025-01-18T10:30:00Z",
                 "expires_at": None,
-                "is_active": True,
-                "rate_limit": None
+                "is_active": True
             }
         }
     }
@@ -100,7 +95,6 @@ class ORMApiKeyUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     permissions: Optional[dict] = None
     is_active: Optional[bool] = None
-    rate_limit: Optional[int] = Field(None, ge=1)
 
     model_config = {
         "json_schema_extra": {
