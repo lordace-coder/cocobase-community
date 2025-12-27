@@ -25,3 +25,12 @@ class TeamMemberSchema(BaseModel):
     email: str
     role: Optional[str] = None  # e.g., 'admin', 'member'
     model_config = {"from_attributes": True}
+
+
+class UserUpdateSchema(BaseModel):
+    username: str | None = None
+    email: str | None = None
+    full_name: str | None = None
+    password: str | None = None
+    
+    model_config = {"from_attributes": True}

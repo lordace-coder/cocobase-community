@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.schemas.user import UserSchema, UserCreateSchema
+from app.models.app_client import Project
+from app.schemas.user import UserSchema, UserCreateSchema, UserUpdateSchema
 from app.models.user import User
 from app.services.email import send_email
 from app.services.jwt import (
@@ -576,3 +577,42 @@ async def resend_verification_email(email: str, db: Session = Depends(get_db)):
     )
 
     return {"msg": "Verification email resent successfully"}
+
+
+# UPDATE AND DELETE USER ROUTES
+@router.patch("/update-current-user")
+async def update_current_user(
+    payload: UserUpdateSchema,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+
+    if payload.password:
+        user.set_password(payload.password)
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if field != "password":
+            setattr(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/delete-user")
+async def delete_current_user(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # delete all projects where current user is the owner
+    db.query(Project).filter(Project.owner_id == user.id).delete(
+        synchronize_session=False
+    )
+    # delete current user
+    db.delete(user)
+    db.commit()
+    return {"msg": "User and associated projects deleted successfully"}
+
+
+
+# PSEUDO MODE LOGIN
