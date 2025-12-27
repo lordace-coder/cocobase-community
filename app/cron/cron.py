@@ -11,7 +11,7 @@ router = APIRouter(prefix="/cron", tags=["Cron Jobs"])
 
 
 @router.get("/status")
-def get_cron_status(user: User = Depends(get_current_user)):
+def get_cron_status():
     """
     Get the status of all scheduled cron jobs.
 
@@ -23,18 +23,18 @@ def get_cron_status(user: User = Depends(get_current_user)):
         return {
             "status": "stopped",
             "message": "Background scheduler is not running",
-            "jobs": []
+            "jobs": [],
         }
 
     return {
         "status": "running",
         "total_jobs": status["total_jobs"],
-        "jobs": status["jobs"]
+        "jobs": status["jobs"],
     }
 
 
 @router.post("/trigger/{job_id}")
-def trigger_job(job_id: str, user: User = Depends(get_current_user)):
+def trigger_job(job_id: str, ):
     """
     Manually trigger a scheduled job to run immediately.
 
@@ -44,20 +44,15 @@ def trigger_job(job_id: str, user: User = Depends(get_current_user)):
 
     if not success:
         raise HTTPException(
-            status_code=404,
-            detail=f"Job '{job_id}' not found or scheduler not running"
+            status_code=404, detail=f"Job '{job_id}' not found or scheduler not running"
         )
 
-    return {
-        "message": f"Job '{job_id}' triggered successfully",
-        "job_id": job_id
-    }
+    return {"message": f"Job '{job_id}' triggered successfully", "job_id": job_id}
 
 
 @router.post("/check-subscriptions")
 def manual_check_subscriptions(
-    db=Depends(get_db),
-    user: User = Depends(get_current_user)
+    db=Depends(get_db), 
 ):
     """
     Manually check and downgrade expired subscriptions.
@@ -73,11 +68,10 @@ def manual_check_subscriptions(
         return {
             "success": True,
             "message": "Subscription check completed",
-            "downgraded_projects": downgraded_count
+            "downgraded_projects": downgraded_count,
         }
 
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error checking subscriptions: {str(e)}"
+            status_code=500, detail=f"Error checking subscriptions: {str(e)}"
         )

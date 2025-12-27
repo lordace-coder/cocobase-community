@@ -586,7 +586,6 @@ async def update_current_user(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 )->UserSchema:
-
     if payload.password:
         user.set_password(payload.password)
     update_data = payload.model_dump(exclude_unset=True)
