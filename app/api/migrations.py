@@ -311,11 +311,13 @@ def rename_field(
             del doc.data[payload.old_field_name]
 
             # Mark as modified (important for SQLAlchemy JSON tracking)
+            from sqlalchemy.orm import attributes
+
             db.add(doc)
+            attributes.flag_modified(doc, "data")
             affected_count += 1
 
     db.commit()
-
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -389,7 +391,6 @@ def add_field(
 
     db.commit()
 
-
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
     return MigrationResponse(
@@ -460,7 +461,6 @@ def delete_field(
             affected_count += 1
 
     db.commit()
-
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -570,7 +570,6 @@ def change_field_type(
             )
 
     db.commit()
-
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -697,7 +696,6 @@ def merge_fields(
 
     db.commit()
 
-
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
     return MigrationResponse(
@@ -791,7 +789,6 @@ def split_field(
         affected_count += 1
 
     db.commit()
-
 
     execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
