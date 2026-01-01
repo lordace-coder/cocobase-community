@@ -386,7 +386,9 @@ def add_field(
         # Only add if field doesn't exist
         if payload.field_name not in doc.data:
             doc.data[payload.field_name] = payload.default_value
+            from sqlalchemy.orm import attributes
             db.add(doc)
+            attributes.flag_modified(doc, "data")
             affected_count += 1
 
     db.commit()
@@ -457,7 +459,9 @@ def delete_field(
         # Remove field if exists
         if payload.field_name in doc.data:
             del doc.data[payload.field_name]
+            from sqlalchemy.orm import attributes
             db.add(doc)
+            attributes.flag_modified(doc, "data")
             affected_count += 1
 
     db.commit()
@@ -558,7 +562,9 @@ def change_field_type(
 
             if new_value != old_value:
                 doc.data[payload.field_name] = new_value
+                from sqlalchemy.orm import attributes
                 db.add(doc)
+                attributes.flag_modified(doc, "data")
                 affected_count += 1
         except Exception as e:
             conversion_errors.append(
@@ -689,7 +695,9 @@ def merge_fields(
                 continue
 
             doc.data[payload.target_field] = merged_value
+            from sqlalchemy.orm import attributes
             db.add(doc)
+            attributes.flag_modified(doc, "data")
             affected_count += 1
         except Exception:
             continue  # Skip documents with conversion errors
@@ -785,7 +793,9 @@ def split_field(
             else:
                 doc.data[field_name] = None
 
+        from sqlalchemy.orm import attributes
         db.add(doc)
+        attributes.flag_modified(doc, "data")
         affected_count += 1
 
     db.commit()
