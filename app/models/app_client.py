@@ -95,3 +95,15 @@ class AppUser(Base):
 
     def compare_password(self, password: str) -> bool:
         return verify_password(password, self.password)
+
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "app_users_password_reset_tokens"
+    
+    id = Column(String, primary_key=True)
+    user_id = Column(String, index=True)
+    token = Column(String, unique=True, index=True)
+    expires_at = Column(DateTime)
+    is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
