@@ -80,11 +80,11 @@ def can_enable_integration(db: Session, integration_id: str) -> tuple[bool, str]
     if integration_id in email_providers.keys():
         # Check if an email integration is already active
         existing_email_integration = (
-            db.query(Integration)
+            db.query(ProjectIntegration)
             .filter(
-                Integration.id.in_(email_providers.keys()),
-                Integration.is_active == True,
-                Integration.id != integration_id,
+                ProjectIntegration.integration_id.in_(email_providers.keys()),
+                ProjectIntegration.is_enabled == True,
+                ProjectIntegration.integration_id != integration_id,
             )
             .first()
         )
