@@ -68,7 +68,6 @@ def get_project_integrations(
     integrations = service.get_project_integrations(project_id, enabled_only)
     return integrations
 
-
 def can_enable_integration(db: Session, integration_id: str) -> tuple[bool, str]:
     """Check if an integration can be enabled (e.g., no 2 email providers at once)"""
     email_providers = {
@@ -76,7 +75,7 @@ def can_enable_integration(db: Session, integration_id: str) -> tuple[bool, str]
         "08e9ea54-0952-43bd-9ddf-e1a8da445b77": "resend",
         "6fd2ecf9-1334-46f6-88e2-dd0440550193": "emailjs",
     }
-
+    
     if integration_id in email_providers.keys():
         # Check if an email integration is already active
         existing_email_integration = (
@@ -88,17 +87,17 @@ def can_enable_integration(db: Session, integration_id: str) -> tuple[bool, str]
             )
             .first()
         )
-
+        
         if existing_email_integration:
-            existing_provider = email_providers[existing_email_integration.id]
+            # Changed from .id to .integration_id
+            existing_provider = email_providers[existing_email_integration.integration_id]
             new_provider = email_providers[integration_id]
             return (
                 False,
                 f"Cannot enable {new_provider}: {existing_provider} is already active. Only one email provider can be active at a time.",
             )
-
+    
     return True, "Integration can be enabled"
-
 
 @router.post("/project/{project_id}/enable")
 def enable_integration(
