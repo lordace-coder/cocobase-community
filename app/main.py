@@ -20,6 +20,7 @@ from app.api import (
     storage,
     health,
     orm_api_keys,
+    email_settup
 )
 
 from app.api.collections import collections
@@ -131,6 +132,7 @@ app.include_router(migrations.router)
 app.include_router(ai_assistant.router)
 app.include_router(analytics.router)
 app.include_router(orm_api_keys.router)
+app.include_router(email_settup.router)
 
 # Create dashboard docs with all routes (for /_/docs)
 dashboard_app.include_router(user.router, tags=["Authentication"])
@@ -138,6 +140,8 @@ dashboard_app.include_router(collections.router)
 dashboard_app.include_router(auth_collection.router)
 dashboard_app.include_router(project.router)
 dashboard_app.include_router(api.router)
+dashboard_app.include_router(email_settup.router)
+
 dashboard_app.include_router(integrations.router)
 dashboard_app.include_router(documents.router)
 dashboard_app.include_router(payments.router)
@@ -237,3 +241,4 @@ admin.add_view(IntegrationsModel)
 admin.add_view(ProjectIntegrationModel)
 admin.add_view(ApiUsageCounterModel)
 admin.add_view(EmailSenderView)
+admin.add_view(DefaultEmailTemplateModel)

@@ -1,10 +1,10 @@
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, JSON, Enum, Index, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
 import enum
 
-Base = declarative_base()
+from app.core.database import Base
+
 
 
 class SMTPConfiguration(Base):
