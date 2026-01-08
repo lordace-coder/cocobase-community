@@ -10,7 +10,7 @@ from app.core.dependencies import get_current_user
 from app.models.app_client import Project
 from app.schemas.user import UserSchema, UserCreateSchema, UserUpdateSchema
 from app.models.user import User
-from app.services.email import send_email
+from app.services.email import send_email, send_email_verification_email, send_password_reset_email
 from app.services.jwt import (
     create_access_token,
     generate_reset_token,
@@ -443,12 +443,10 @@ async def handle_password_reset(email: str, db: Session = Depends(get_db)):
     # Build reset URL using environment variable for frontend base URL
     frontend_base_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
     reset_url = f"{frontend_base_url}/forgot_password/{token}"
-
-    await send_email(
+    send_password_reset_email(
         user.email,
-        "Password Reset",
-        "a1e531aa-a09e-4811-aa76-c7ca62643eb8",
-        {"reset_link": reset_url, "username": user.username},
+        user.username,
+        reset_url,
     )
     return {"msg": "Password reset email sent"}
 
@@ -497,12 +495,11 @@ async def send_verification_email(email: str, db: Session = Depends(get_db)):
     frontend_base_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
     verification_url = f"{frontend_base_url}/verify-email/{token}"
 
-    # Send verification email using template "c106c91f-48bf-420d-82dc-aeb7fb5c08ff"
-    await send_email(
-        user.email,
-        "Verify Your Email - Cocobase",
-        "c106c91f-48bf-420d-82dc-aeb7fb5c08ff",
-        {"verification_link": verification_url, "username": user.username},
+  # Send verification email
+    send_email_verification_email(
+        email = user.email,
+        link = verification_url,
+        username = user.username
     )
 
     return {"msg": "Verification email sent successfully"}
@@ -569,11 +566,10 @@ async def resend_verification_email(email: str, db: Session = Depends(get_db)):
     verification_url = f"{frontend_base_url}/verify-email/{token}"
 
     # Send verification email
-    await send_email(
-        user.email,
-        "Verify Your Email - Cocobase",
-        "c106c91f-48bf-420d-82dc-aeb7fb5c08ff",
-        {"verification_link": verification_url, "username": user.username},
+    send_email_verification_email(
+        email = user.email,
+        link = verification_url,
+        username = user.username
     )
 
     return {"msg": "Verification email resent successfully"}

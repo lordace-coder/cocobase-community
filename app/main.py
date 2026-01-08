@@ -20,7 +20,8 @@ from app.api import (
     storage,
     health,
     orm_api_keys,
-    email_settup
+    email_settup,
+    webhooks
 )
 
 from app.api.collections import collections
@@ -133,6 +134,7 @@ app.include_router(ai_assistant.router)
 app.include_router(analytics.router)
 app.include_router(orm_api_keys.router)
 app.include_router(email_settup.router)
+app.include_router(webhooks.router)
 
 # Create dashboard docs with all routes (for /_/docs)
 dashboard_app.include_router(user.router, tags=["Authentication"])
@@ -141,6 +143,7 @@ dashboard_app.include_router(auth_collection.router)
 dashboard_app.include_router(project.router)
 dashboard_app.include_router(api.router)
 dashboard_app.include_router(email_settup.router)
+dashboard_app.include_router(webhooks.router)
 
 dashboard_app.include_router(integrations.router)
 dashboard_app.include_router(documents.router)
