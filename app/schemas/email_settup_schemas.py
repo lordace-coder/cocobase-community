@@ -94,9 +94,8 @@ class ProjectTemplateResponse(TemplateResponse):
 
 class SendEmailRequest(BaseModel):
     recipients: List[EmailStr]
-    template_type: EmailTemplateTypeEnum
-    variables: dict = {}
-    subject_override: Optional[str] = None
+    body:str
+    subject: str
 
 
 class EmailLogResponse(BaseModel):

@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import resend
 from app.models.app_client import Project
 from app.models.user import User
-from app.services.email_utils import get_email_template, get_email_verification_template, get_password_reset_template
+from app.services.email_templates import get_email_template, get_email_verification_template, get_password_reset_template
 
 load_dotenv()
 
@@ -24,6 +24,7 @@ def send_email(
 ) -> dict | None:
     """
     Send email using Resend SDK
+    Uses BCC to protect recipient privacy when sending to multiple recipients
     
     Args:
         to: Email address(es) - string or list
@@ -41,7 +42,8 @@ def send_email(
     
     params = {
         "from": FROM_EMAIL,
-        "to": to,
+        "to": [FROM_EMAIL],  # Send to self
+        "bcc": to,  # BCC all recipients to protect privacy
         "subject": subject,
         "html": html_content,
     }
@@ -52,7 +54,7 @@ def send_email(
     
     try:
         response = resend.Emails.send(params)
-        print(f"Email sent successfully. ID: {response.get('id')}")
+        print(f"Email sent successfully to {len(to)} recipient(s). ID: {response.get('id')}")
         return response
             
     except Exception as e:
@@ -242,11 +244,11 @@ def send_password_reset_email(
     )
 
 
-def send_email_verification_email(username,link,email):
+def send_email_verification_email(username, link, email):
     """
     Send email verification email with secure verification link
     """
-    html_content = get_email_verification_template(username,link)
+    html_content = get_email_verification_template(username, link)
 
     send_email(
         to=email,

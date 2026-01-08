@@ -21,13 +21,13 @@ async def resend_webhook_forward(req: Request):
     """Endpoint to forward Resend emails to cocomailer email"""
     data = await req.json()
 
-    msg_id = data.get("data").get("message_id")
+    msg_id = data.get("data").get("email_id")
     msg_title = data.get("data").get("subject")
     email_detail = resend.Emails.Receiving.get(email_id=msg_id)
 
-    send_email(
-        to="cocomailer85@gmail.com",
+    res = send_email(
+        to="cocobase85@gmail.com",
         subject=f"FWD: {msg_title} from {email_detail.get('from')}",
         html_content=email_detail.get("html"),
     )
-    return
+    return res

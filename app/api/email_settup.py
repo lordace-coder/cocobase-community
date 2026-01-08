@@ -21,6 +21,7 @@ from app.models.email_models import (
     EmailStatusEnum,
 )
 from app.models.integrations import Integration, ProjectIntegration
+from app.services.email_service import EmailService
 
 # Router-level dependency for authentication
 router = APIRouter(
@@ -517,81 +518,62 @@ def send_via_smtp(
     server.quit()
 
 
-@router.post("/send", response_model=EmailLogResponse)
-def send_email(
+@router.post("/send")
+async def send_email(
     request: SendEmailRequest,
     user: Annotated[User, Depends(verify_project_access_dep)],
     db: Annotated[Session, Depends(get_db)],
     project_id: Annotated[str, Path()],
 ):
     """Send an email using configured provider"""
+    # todo hande the commented code inside the email service
     # Get template
-    template, is_default = get_template_content(project_id, request.template_type, db)
+    # template, is_default = get_template_content(project_id, request.template_type, db)
 
-    # Render template with variables
-    subject = request.subject_override or render_template(
-        template.subject, request.variables
-    )
-    html_body = render_template(template.html_body, request.variables)
-    text_body = render_template(template.text_body, request.variables)
+    # # Render template with variables
+    # subject = request.subject_override or render_template(
+    #     template.subject, request.variables
+    # )
+    # html_body = render_template(template.html_body, request.variables)
+    # text_body = render_template(template.text_body, request.variables)
 
-    # Create email log
-    email_log = EmailLog(
-        project_id=project_id,
+    # # Create email log
+    # email_log = EmailLog(
+    #     project_id=project_id,
+    #     recipients=request.recipients,
+    #     subject=subject,
+    #     template_type=request.template_type,
+    #     used_default_template=is_default,
+    #     template_id=str(template.id),
+    #     status=EmailStatusEnum.PENDING,
+    # )
+    # db.add(email_log)
+    # db.commit()
+
+    service = EmailService(project_id, db)
+    res = await service.send_email(
         recipients=request.recipients,
-        subject=subject,
-        template_type=request.template_type,
-        used_default_template=is_default,
-        template_id=str(template.id),
-        status=EmailStatusEnum.PENDING,
+        subject=request.subject,
+        body=request.body,
     )
-    db.add(email_log)
-    db.commit()
+    print("res ", res)
+    # Update log status
+    # email_log.status = EmailStatusEnum.SENT
+    # email_log.sent_at = datetime.utcnow()
 
-    try:
-        # Get active email provider
-        smtp_config = (
-            db.query(SMTPConfiguration)
-            .filter(
-                and_(
-                    SMTPConfiguration.project_id == project_id,
-                    SMTPConfiguration.is_active == True,
-                )
-            )
-            .first()
-        )
+    #     email_log.status = EmailStatusEnum.FAILED
+    #     email_log.error_message = str(e)
 
-        if smtp_config:
-            # Send via SMTP
-            send_via_smtp(
-                smtp_config, request.recipients, subject, html_body, text_body
-            )
-        else:
-            # Check for integrations
-            # TODO: Implement integration-based sending (Cocomailer, Resend, etc.)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No active email provider configured",
-            )
+    # db.commit()
+    # db.refresh(email_log)
 
-        # Update log status
-        email_log.status = EmailStatusEnum.SENT
-        email_log.sent_at = datetime.utcnow()
+    # if email_log.status == EmailStatusEnum.FAILED:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail=f"Failed to send email: {email_log.error_message}",
+    #     )
 
-    except Exception as e:
-        email_log.status = EmailStatusEnum.FAILED
-        email_log.error_message = str(e)
-
-    db.commit()
-    db.refresh(email_log)
-
-    if email_log.status == EmailStatusEnum.FAILED:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send email: {email_log.error_message}",
-        )
-
-    return email_log
+    return
 
 
 # ============= Email Logs Routes =============
@@ -599,8 +581,7 @@ def send_email(
 
 @router.get("/logs", response_model=List[EmailLogResponse])
 def get_email_logs(
-    project_id: str ,
-
+    project_id: str,
     status_filter: Optional[EmailStatusEnum] = None,
     limit: int = 50,
     offset: int = 0,

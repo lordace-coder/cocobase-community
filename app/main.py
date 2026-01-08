@@ -158,6 +158,9 @@ dashboard_app.include_router(ai_assistant.router)
 dashboard_app.include_router(analytics.router)
 dashboard_app.include_router(orm_api_keys.router)
 
+@app.get("/")
+def root():
+    return {"status": "ok"}
 
 # Override OpenAPI schema for main app to only show public routes
 def custom_openapi():
