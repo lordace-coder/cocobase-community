@@ -53,6 +53,24 @@ class OAuthClientInfo(BaseModel):
         from_attributes = True
 
 
+class OAuthClientUpdate(BaseModel):
+    """Update OAuth client (all fields optional)"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    redirect_uris: Optional[List[str]] = None
+    scopes: Optional[List[str]] = None
+
+    @validator('redirect_uris')
+    def validate_redirect_uris(cls, v):
+        if v is not None and len(v) == 0:
+            raise ValueError('At least one redirect URI is required')
+        if v is not None:
+            for uri in v:
+                if not uri.startswith(('http://', 'https://')):
+                    raise ValueError('Redirect URIs must use http or https')
+        return v
+
+
 # =========================
 # AUTHORIZATION SCHEMAS
 # =========================

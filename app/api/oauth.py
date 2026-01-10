@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from urllib.parse import urlencode
+from datetime import datetime
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -11,6 +12,7 @@ from app.services.oauth_client_service.oauth import OAuthService
 from app.services.oauth_client_service.schemas import (
     OAuthClientCreate,
     OAuthClientResponse,
+    OAuthClientUpdate,
     TokenRequest,
     TokenResponse,
     UserInfoResponse,
@@ -64,10 +66,43 @@ def create_oauth_client(
     return response_data
 
 
+@router.get("/clients")
+def list_oauth_clients(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List all OAuth clients owned by the current user.
+    """
+    from app.models.oauth import OAuthClient
+
+    clients = db.query(OAuthClient).filter(
+        OAuthClient.owner_user_id == current_user.id
+    ).all()
+
+    # Return without client_secret
+    return {
+        "clients": [
+            {
+                "id": client.id,
+                "client_id": client.client_id,
+                "name": client.name,
+                "description": client.description,
+                "redirect_uris": client.redirect_uris,
+                "scopes": client.scopes,
+                "is_confidential": client.is_confidential,
+                "created_at": client.created_at,
+                "updated_at": client.updated_at,
+            }
+            for client in clients
+        ]
+    }
+
+
 @router.get("/clients/{client_id}")
 def get_oauth_client(
     client_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get OAuth client details (without secret)"""
@@ -77,10 +112,128 @@ def get_oauth_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    if client.owner_user_id != current_user["id"]:
+    if client.owner_user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    return client
+    # Return without client_secret
+    return {
+        "id": client.id,
+        "client_id": client.client_id,
+        "name": client.name,
+        "description": client.description,
+        "redirect_uris": client.redirect_uris,
+        "scopes": client.scopes,
+        "is_confidential": client.is_confidential,
+        "created_at": client.created_at,
+        "updated_at": client.updated_at,
+    }
+
+
+@router.put("/clients/{client_id}")
+def update_oauth_client(
+    client_id: str,
+    update_data: OAuthClientUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update OAuth client settings.
+    Note: client_secret cannot be updated. Create a new client if needed.
+    """
+    from app.models.oauth import OAuthClient
+
+    oauth_service = OAuthService(db)
+    client = oauth_service.get_client(client_id)
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    if client.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Update fields if provided (validation already done by Pydantic schema)
+    if update_data.name is not None:
+        client.name = update_data.name
+    if update_data.description is not None:
+        client.description = update_data.description
+    if update_data.redirect_uris is not None:
+        client.redirect_uris = update_data.redirect_uris
+    if update_data.scopes is not None:
+        client.scopes = update_data.scopes
+
+    client.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(client)
+
+    return {
+        "id": client.id,
+        "client_id": client.client_id,
+        "name": client.name,
+        "description": client.description,
+        "redirect_uris": client.redirect_uris,
+        "scopes": client.scopes,
+        "is_confidential": client.is_confidential,
+        "created_at": client.created_at,
+        "updated_at": client.updated_at,
+        "message": "Client updated successfully"
+    }
+
+
+@router.delete("/clients/{client_id}")
+def delete_oauth_client(
+    client_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete an OAuth client.
+    This will also revoke all associated tokens and authorization codes.
+    """
+    from app.models.oauth import (
+        OAuthClient,
+        OAuthAccessToken,
+        OAuthRefreshToken,
+        OAuthAuthorizationCode,
+        OAuthUserConsent
+    )
+
+    oauth_service = OAuthService(db)
+    client = oauth_service.get_client(client_id)
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    if client.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Revoke all access tokens for this client
+    db.query(OAuthAccessToken).filter(
+        OAuthAccessToken.client_id == client_id
+    ).update({"revoked": True})
+
+    # Revoke all refresh tokens for this client
+    db.query(OAuthRefreshToken).filter(
+        OAuthRefreshToken.client_id == client_id
+    ).update({"revoked": True})
+
+    # Mark all authorization codes as used
+    db.query(OAuthAuthorizationCode).filter(
+        OAuthAuthorizationCode.client_id == client_id
+    ).update({"used": True})
+
+    # Delete user consents
+    db.query(OAuthUserConsent).filter(
+        OAuthUserConsent.client_id == client_id
+    ).delete()
+
+    # Delete the client itself
+    db.delete(client)
+    db.commit()
+
+    return {
+        "message": "OAuth client deleted successfully",
+        "client_id": client_id
+    }
 
 
 # =========================
