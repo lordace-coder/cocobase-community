@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 import uuid
 
-from app.services.utils import hash_password, verify_password
+from app.services.utils import hash_api_key, hash_password, verify_api_key, verify_password
 
 
 class ORMApiKey(Base):
@@ -57,12 +57,12 @@ class ORMApiKey(Base):
 
     def set_key(self, key: str) -> None:
         """Hash the API key for secure storage."""
-        self.key_hash = hash_password(key)
+        self.key_hash = hash_api_key(key)
         self.key_prefix = key[:16]  # Store first 16 chars for display
 
     def verify_key(self, key: str) -> bool:
         """Verify if the provided key matches the stored hash."""
-        return verify_password(key, self.key_hash)
+        return verify_api_key(key, self.key_hash)
 
     def __repr__(self):
         return f"<ORMApiKey {self.name} ({self.key_prefix}...)>"

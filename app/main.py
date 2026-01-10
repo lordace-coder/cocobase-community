@@ -21,10 +21,13 @@ from app.api import (
     health,
     orm_api_keys,
     email_settup,
-    webhooks
+    webhooks,
+    oauth,
+    two_factor_auth
 )
 
 from app.api.collections import collections
+from app.core.config import SECRET_KEY
 from app.cron import cron
 from app.services.redis_worker import close_redis, init_redis, get_redis_instance
 from app.websockets import documents
@@ -37,6 +40,7 @@ from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
 import logging
+from starlette.middleware.sessions import SessionMiddleware
 
 logger = logging.getLogger(__name__)
 # Configure root logger to WARNING by default to reduce noise, but enable INFO for project tracking
@@ -73,6 +77,14 @@ admin = Admin(
     base_url="/_/admin", 
 )
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,  # Use env variable
+    session_cookie="cocobase_session",  # Cookie name
+    max_age=14 * 24 * 60 * 60,  # 14 days in seconds
+    same_site="lax",  # CSRF protection
+    https_only=False,  # Set to True in production with HTTPS
+)
 # Configure CORS for main app
 app.add_middleware(
     CORSMiddleware,
@@ -135,6 +147,8 @@ app.include_router(analytics.router)
 app.include_router(orm_api_keys.router)
 app.include_router(email_settup.router)
 app.include_router(webhooks.router)
+app.include_router(oauth.router)
+app.include_router(two_factor_auth.router)
 
 # Create dashboard docs with all routes (for /_/docs)
 dashboard_app.include_router(user.router, tags=["Authentication"])
@@ -157,6 +171,8 @@ dashboard_app.include_router(migrations.router)
 dashboard_app.include_router(ai_assistant.router)
 dashboard_app.include_router(analytics.router)
 dashboard_app.include_router(orm_api_keys.router)
+dashboard_app.include_router(oauth.router)
+dashboard_app.include_router(two_factor_auth.router)
 
 @app.get("/")
 def root():

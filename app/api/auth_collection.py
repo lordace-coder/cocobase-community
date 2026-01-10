@@ -23,7 +23,9 @@ from app.models.integrations import ProjectIntegration
 from app.models.pricing import get_current_plan
 from app.models.user import User
 from app.models.app_client import AppUser
+from app.models.two_factor_auth import TwoFactorCode, TwoFactorSettings
 from app.services.email import notify_limit_reached, notify_limit_warning
+from app.services.email_service import EmailService
 from app.storage.storage import check_storage_limit, handle_file_upload
 import json
 import logging
@@ -47,8 +49,9 @@ router = APIRouter(prefix="/auth-collections", tags=["App Client"])
 
 
 @router.post("/login")
-def user_login(
+async def user_login(
     payload: AppUserSchema,
+    bg: BackgroundTasks,
     db: Session = Depends(get_db),
     proj: tuple[Project, User] = Depends(get_project),
 ) -> AppTokenResponse:
@@ -63,7 +66,75 @@ def user_login(
             raise HTTPException(404, "Account with this email does not exist")
         # check if password is valid
         if user.compare_password(payload.password):
-            # return api token
+            # Check if 2FA is enabled for project AND user
+            if project.configs and project.configs.get('ENABLE_2FA', False):
+                settings = db.query(TwoFactorSettings).filter(
+                    TwoFactorSettings.user_id == user.id,
+                    TwoFactorSettings.is_enabled == True
+                ).first()
+
+                if settings:
+                    # Check if there's a recent valid 2FA verification (within 5 minutes)
+                    # This allows the user to complete login after verification
+                    recent_verification = settings.last_verified_at and \
+                        settings.last_verified_at >= datetime.utcnow() - timedelta(minutes=5)
+
+                    if recent_verification:
+                        # User has recently verified 2FA, allow login and reset verification timestamp
+                        settings.last_verified_at = None
+                        db.commit()
+                        return {
+                            'access_token': create_app_user_token(user),
+                            'user': user
+                        }
+
+                    # Check if there's already a pending code sent in the last 2 minutes
+                    # This prevents spam and ensures only one active code at a time
+                    existing_code = db.query(TwoFactorCode).filter(
+                        TwoFactorCode.user_id == user.id,
+                        TwoFactorCode.project_id == project.id,
+                        TwoFactorCode.is_used == False,
+                        TwoFactorCode.created_at >= datetime.utcnow() - timedelta(minutes=2)
+                    ).order_by(TwoFactorCode.created_at.desc()).first()
+
+                    if existing_code and existing_code.is_valid():
+                        # Code already sent recently, don't send another
+                        return {
+                            "requires_2fa": True,
+                            "message": "2FA code already sent. Please check your email."
+                        }
+
+                    # Generate and send 2FA code
+                    code = TwoFactorCode.generate_code()
+                    expiry_minutes = 10
+                    twofa_code = TwoFactorCode(
+                        user_id=user.id,
+                        project_id=project.id,
+                        code=code,
+                        expires_at=datetime.utcnow() + timedelta(minutes=expiry_minutes)
+                    )
+                    db.add(twofa_code)
+                    db.commit()
+
+                    # Send email in background
+                    email_service = EmailService(project_id=project.id, db=db)
+                    user_name = getattr(user, 'name', None) or getattr(user, 'username', None) or user.email
+
+                    bg.add_task(
+                        email_service.send_2fa_code_email,
+                        to_email=user.email,
+                        code=code,
+                        user_name=user_name,
+                        app_name=project.name,
+                        expiry_minutes=expiry_minutes
+                    )
+
+                    return {
+                        "requires_2fa": True,
+                        "message": "2FA code sent to your email"
+                    }
+
+            # Normal login flow (no 2FA or 2FA not enabled)
             return {
                 'access_token':create_app_user_token(user), 'user':user
             }
@@ -215,6 +286,24 @@ async def create_new_user(
         db.add(user)
         db.commit()
         db.refresh(user)
+
+        # Send welcome email (only if enabled in project config)
+        send_welcome = project.configs.get('SEND_WELCOME_EMAIL', True) if project.configs else True
+        if send_welcome:
+            try:
+                email_service = EmailService(project_id=project.id, db=db)
+                login_url = project.configs.get('LOGIN_URL') if project.configs else None
+                bg.add_task(
+                    email_service.send_welcome_email,
+                    to_email=user.email,
+                    user_name=user_data.get('name') or user_data.get('username') or user.email,
+                    app_name=project.name,
+                    login_url=login_url
+                )
+            except Exception as e:
+                # Log but don't fail signup
+                logging.error(f"Failed to send welcome email: {e}")
+
         return {"access_token":create_app_user_token(user), "user":user}
 
 

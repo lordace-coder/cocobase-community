@@ -3,6 +3,8 @@ import bcrypt
 import httpx
 import asyncio
 import logging
+import hashlib
+import hmac
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -110,4 +112,10 @@ async def handle_webhook_call(
     return False
 
 
+def hash_api_key(api_key: str) -> str:
+    """Hash API keys using SHA256 (no length limit)"""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
+def verify_api_key(api_key: str, stored_hash: str) -> bool:
+    """Verify API key against stored hash"""
+    return hmac.compare_digest(hash_api_key(api_key), stored_hash)

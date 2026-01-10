@@ -58,6 +58,7 @@ MarkupSafe
 mdurl
 multidict
 openai
+passlib
 pendulum
 propcache
 psutil

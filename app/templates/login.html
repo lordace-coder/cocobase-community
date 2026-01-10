@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Login | CocoBase</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px) rotate(0deg);
+        }
+        50% {
+          transform: translateY(-20px) rotate(5deg);
+        }
+      }
+
+      @keyframes glow {
+        0%,
+        100% {
+          opacity: 0.5;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      .blob {
+        animation: float 8s ease-in-out infinite;
+      }
+
+      .blob-glow {
+        animation: glow 4s ease-in-out infinite;
+      }
+
+      @keyframes slide-in {
+        from {
+          opacity: 0;
+          transform: translateX(-30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      .slide-in {
+        animation: slide-in 0.6s ease-out forwards;
+      }
+
+      .input-focus:focus {
+        box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+      }
+    </style>
+  </head>
+  <body
+    class="bg-slate-950 min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+  >
+    <!-- Animated background elements -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div
+        class="blob absolute top-20 -left-20 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl blob-glow"
+      ></div>
+      <div
+        class="blob absolute bottom-20 -right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl blob-glow"
+        style="animation-delay: 2s"
+      ></div>
+      <div
+        class="blob absolute top-1/2 left-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl blob-glow"
+        style="animation-delay: 4s"
+      ></div>
+    </div>
+
+    <div class="w-full max-w-md relative z-10">
+      <!-- Logo and branding -->
+      <div class="text-center mb-8 slide-in">
+        <div
+          class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl shadow-lg shadow-orange-500/50 mb-6 transform hover:scale-110 transition-transform duration-300"
+        >
+          <span class="text-2xl font-bold text-white">C</span>
+        </div>
+        <h1 class="text-4xl font-bold text-white mb-2">CocoBase</h1>
+        <p class="text-slate-400 text-sm">Secure OAuth Authentication</p>
+      </div>
+
+      <!-- Login card -->
+      <div
+        class="slide-in bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 rounded-3xl p-8 shadow-2xl"
+        style="animation-delay: 0.2s"
+      >
+        <div class="mb-8">
+          <h2 class="text-2xl font-bold text-white mb-2">Welcome back</h2>
+          <p class="text-slate-400 text-sm">
+            Enter your credentials to access your account
+          </p>
+        </div>
+
+        <form method="post" class="space-y-5">
+          {% if error %}
+          <div
+            class="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3"
+          >
+            <svg
+              class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <span class="text-red-300 text-sm">{{ error }}</span>
+          </div>
+          {% endif %}
+
+          <div>
+            <label
+              for="email"
+              class="block text-sm font-medium text-slate-300 mb-2"
+              >Email address</label
+            >
+            <div class="relative">
+              <div
+                class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
+              >
+                <svg
+                  class="w-5 h-5 text-slate-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="you@example.com"
+                required
+                class="input-focus w-full pl-12 pr-4 py-3.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50 transition-all duration-200"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              for="password"
+              class="block text-sm font-medium text-slate-300 mb-2"
+              >Password</label
+            >
+            <div class="relative">
+              <div
+                class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
+              >
+                <svg
+                  class="w-5 h-5 text-slate-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                  />
+                </svg>
+              </div>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                placeholder="••••••••"
+                required
+                class="input-focus w-full pl-12 pr-4 py-3.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50 transition-all duration-200"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-sm">
+            <label class="flex items-center cursor-pointer group">
+              <input
+                type="checkbox"
+                class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500 focus:ring-offset-slate-900 cursor-pointer"
+              />
+              <span
+                class="ml-2 text-slate-400 group-hover:text-slate-300 transition-colors"
+                >Remember me</span
+              >
+            </label>
+            <a
+              href="https://www.cocobase.buzz/psw-reset"
+              class="text-orange-500 hover:text-orange-400 font-medium transition-colors"
+              >Forgot password?</a
+            >
+          </div>
+
+          <input type="hidden" name="next" value="{{ next }}" />
+
+          <button
+            type="submit"
+            class="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-orange-500/30 hover:shadow-orange-500/50 transition-all duration-200 transform hover:-translate-y-0.5"
+          >
+            Sign in to your account
+          </button>
+        </form>
+
+        <!-- Divider -->
+        <div class="relative my-8">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-slate-800"></div>
+          </div>
+          <div class="relative flex justify-center text-sm">
+            <span class="px-4 bg-slate-900/50 text-slate-500"
+              >Secured by CocoBase OAuth</span
+            >
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center">
+          <p class="text-slate-500 text-sm">
+            Don't have an account?
+            <a
+              href="https://www.cocobase.buzz/signup"
+              class="text-orange-500 hover:text-orange-400 font-medium transition-colors ml-1"
+              >Sign up</a
+            >
+          </p>
+        </div>
+      </div>
+
+      <!-- Security badge -->
+      <div
+        class="mt-6 flex items-center justify-center gap-2 text-slate-600 text-xs slide-in"
+        style="animation-delay: 0.4s"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+          />
+        </svg>
+        <span>256-bit SSL encrypted connection</span>
+      </div>
+    </div>
+  </body>
+</html>
