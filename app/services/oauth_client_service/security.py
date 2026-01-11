@@ -23,12 +23,24 @@ def generate_token(length: int = 32) -> str:
 
 
 def hash_secret(secret: str) -> str:
-    """Hash client secret or password"""
+    """
+    Hash client secret or password.
+    Truncates to 72 bytes for bcrypt compatibility.
+    """
+    # Bcrypt has a 72-byte limit, truncate if necessary
+    if len(secret.encode('utf-8')) > 72:
+        secret = secret.encode('utf-8')[:72].decode('utf-8', errors='ignore')
     return pwd_context.hash(secret)
 
 
 def verify_secret(plain_secret: str, hashed_secret: str) -> bool:
-    """Verify a secret against its hash"""
+    """
+    Verify a secret against its hash.
+    Truncates to 72 bytes for bcrypt compatibility.
+    """
+    # Bcrypt has a 72-byte limit, truncate if necessary
+    if len(plain_secret.encode('utf-8')) > 72:
+        plain_secret = plain_secret.encode('utf-8')[:72].decode('utf-8', errors='ignore')
     return pwd_context.verify(plain_secret, hashed_secret)
 
 
