@@ -24,24 +24,25 @@ def generate_token(length: int = 32) -> str:
 
 def hash_secret(secret: str) -> str:
     """
-    Hash client secret or password.
-    Truncates to 72 bytes for bcrypt compatibility.
+    Hash client secret using SHA-256.
+
+    For OAuth client secrets, we use SHA-256 instead of bcrypt because:
+    1. Client secrets are already high-entropy random tokens (not user passwords)
+    2. No length limitations (bcrypt has 72-byte limit)
+    3. Faster verification (important for OAuth token exchanges)
+    4. Simpler implementation without bcrypt compatibility issues
     """
-    # Bcrypt has a 72-byte limit, truncate if necessary
-    if len(secret.encode('utf-8')) > 72:
-        secret = secret.encode('utf-8')[:72].decode('utf-8', errors='ignore')
-    return pwd_context.hash(secret)
+    # Use SHA-256 for OAuth client secrets (high-entropy random tokens)
+    return hashlib.sha256(secret.encode('utf-8')).hexdigest()
 
 
 def verify_secret(plain_secret: str, hashed_secret: str) -> bool:
     """
-    Verify a secret against its hash.
-    Truncates to 72 bytes for bcrypt compatibility.
+    Verify a secret against its SHA-256 hash.
+    Uses constant-time comparison to prevent timing attacks.
     """
-    # Bcrypt has a 72-byte limit, truncate if necessary
-    if len(plain_secret.encode('utf-8')) > 72:
-        plain_secret = plain_secret.encode('utf-8')[:72].decode('utf-8', errors='ignore')
-    return pwd_context.verify(plain_secret, hashed_secret)
+    expected_hash = hashlib.sha256(plain_secret.encode('utf-8')).hexdigest()
+    return secrets.compare_digest(expected_hash, hashed_secret)
 
 
 def create_jwt_token(
