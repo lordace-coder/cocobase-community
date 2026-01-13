@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import (
     APIRouter,
@@ -22,13 +22,15 @@ from app.models.app_client import Project
 from app.models.integrations import ProjectIntegration
 from app.models.pricing import get_current_plan
 from app.models.user import User
-from app.models.app_client import AppUser
+from app.models.app_client import AppUser, EmailVerificationToken
 from app.models.two_factor_auth import TwoFactorCode, TwoFactorSettings
 from app.services.email import notify_limit_reached, notify_limit_warning
 from app.services.email_service import EmailService
+from app.models.email_models import EmailTemplateTypeEnum
 from app.storage.storage import check_storage_limit, handle_file_upload
 import json
 import logging
+import secrets
 from app.services.integrations import IntegrationService
 
 logger = logging.getLogger(__name__)
@@ -304,7 +306,81 @@ async def create_new_user(
                 # Log but don't fail signup
                 logging.error(f"Failed to send welcome email: {e}")
 
+        # Send verification email (only if enabled in project config)
+        send_verification = project.configs.get('ENABLE_EMAIL_VERIFICATION', False) if project.configs else False
+        if send_verification:
+            try:
+                # Generate verification token
+                token = secrets.token_urlsafe(32)
+                expiry_hours = 24
+
+                verification_token = EmailVerificationToken(
+                    user_id=user.id,
+                    client_id=project.id,
+                    token=token,
+                    expires_at=datetime.utcnow() + timedelta(hours=expiry_hours)
+                )
+                db.add(verification_token)
+                db.commit()
+
+                # Get verification URL from project config
+                verification_base_url = project.configs.get('VERIFICATION_URL') or project.configs.get('FRONTEND_URL')
+                if not verification_base_url:
+                    verification_base_url = "https://yourdomain.com/verify-email"
+
+                verification_url = f"{verification_base_url}?token={token}"
+                user_name = user_data.get('name') or user_data.get('username') or user.email.split('@')[0]
+
+                # Send verification email in background
+                bg.add_task(
+                    send_verification_email_background,
+                    email_service=EmailService(project_id=project.id, db=db),
+                    to_email=user.email,
+                    user_name=user_name,
+                    app_name=project.name,
+                    verification_url=verification_url,
+                    expiry_hours=expiry_hours
+                )
+            except Exception as e:
+                # Log but don't fail signup
+                logging.error(f"Failed to send verification email: {e}")
+
         return {"access_token":create_app_user_token(user), "user":user}
+
+
+async def send_verification_email_background(
+    email_service: EmailService,
+    to_email: str,
+    user_name: str,
+    app_name: str,
+    verification_url: str,
+    expiry_hours: int
+):
+    """Background task to send verification email"""
+    try:
+        # Get template
+        template = email_service.get_template(EmailTemplateTypeEnum.VERIFICATION)
+
+        # Prepare context
+        context = {
+            'user_name': user_name,
+            'app_name': app_name,
+            'verification_url': verification_url,
+            'expiry_hours': expiry_hours
+        }
+
+        # Render template
+        html_body = email_service.render_template(template.body, context)
+        subject = email_service.render_template(template.subject, context)
+
+        # Send email
+        await email_service.send_email(
+            recipients=[to_email],
+            subject=subject,
+            body=html_body
+        )
+    except Exception as e:
+        logging.error(f"Error sending verification email: {str(e)}")
 
 
 # list users with advanced querying

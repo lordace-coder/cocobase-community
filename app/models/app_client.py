@@ -78,6 +78,10 @@ class AppUser(Base):
     oauth_provider: Mapped[str] = mapped_column(String, nullable=True)  # 'google', 'apple', etc.
     roles = Column(ARRAY(String), default=lambda: [], server_default="{}")
 
+    # Email verification fields
+    email_verified = Column(Boolean, default=False, nullable=False, server_default='false')
+    email_verified_at = Column(DateTime, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("client_id", "email", name="uq_client_email"),
         Index("ix_app_users_created_at", "created_at"),
@@ -100,10 +104,22 @@ class AppUser(Base):
 
 class PasswordResetToken(Base):
     __tablename__ = "app_users_password_reset_tokens"
-    
+
     id = Column(String, primary_key=True)
     user_id = Column(String, index=True)
     token = Column(String, unique=True, index=True)
     expires_at = Column(DateTime)
     is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "app_users_email_verification_tokens"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, index=True, nullable=False)
+    client_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    token = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

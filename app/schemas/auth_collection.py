@@ -26,6 +26,8 @@ class AppUserResponse(BaseModel):
     created_at: datetime
     id: str
     roles: Optional[list[str]] = []
+    email_verified: bool = False
+    email_verified_at: Optional[datetime] = None
 
 
 class AppTokenResponse(BaseModel):

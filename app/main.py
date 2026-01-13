@@ -23,7 +23,8 @@ from app.api import (
     email_settup,
     webhooks,
     oauth,
-    two_factor_auth
+    two_factor_auth,
+    email_verification
 )
 
 from app.api.collections import collections
@@ -149,6 +150,7 @@ app.include_router(email_settup.router)
 app.include_router(webhooks.router)
 app.include_router(oauth.router)
 app.include_router(two_factor_auth.router)
+app.include_router(email_verification.router)
 
 # Create dashboard docs with all routes (for /_/docs)
 dashboard_app.include_router(user.router, tags=["Authentication"])
@@ -173,6 +175,7 @@ dashboard_app.include_router(analytics.router)
 dashboard_app.include_router(orm_api_keys.router)
 dashboard_app.include_router(oauth.router)
 dashboard_app.include_router(two_factor_auth.router)
+dashboard_app.include_router(email_verification.router)
 
 @app.get("/")
 def root():
