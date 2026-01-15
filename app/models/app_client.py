@@ -74,7 +74,7 @@ class AppUser(Base):
     password: Mapped[str] = mapped_column(String, nullable=False)
     data = Column(JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    oauth_id: Mapped[str] = mapped_column(String, nullable=True, unique=True)
+    oauth_id: Mapped[str] = mapped_column(String, nullable=True, )
     oauth_provider: Mapped[str] = mapped_column(String, nullable=True)  # 'google', 'apple', etc.
     roles = Column(ARRAY(String), default=lambda: [], server_default="{}")
 
