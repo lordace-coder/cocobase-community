@@ -31,5 +31,8 @@ class AppUserResponse(BaseModel):
 
 
 class AppTokenResponse(BaseModel):
-    access_token: str
-    user:Optional[AppUserResponse] = None
+    access_token: Optional[str] = None
+    user: Optional[AppUserResponse] = None
+    # 2FA fields (returned when 2FA is required)
+    requires_2fa: Optional[bool] = None
+    message: Optional[str] = None

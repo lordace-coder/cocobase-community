@@ -107,7 +107,10 @@ async def user_login(
                         }
 
                     # Generate and send 2FA code
-                    code = TwoFactorCode.generate_code()
+                    # Get OTP length from project config (default: 6, allowed: 4-10)
+                    otp_length = project.configs.get('OTP_LENGTH', 6)
+                    otp_length = max(4, min(10, otp_length))
+                    code = TwoFactorCode.generate_code(length=otp_length)
                     expiry_minutes = 10
                     twofa_code = TwoFactorCode(
                         user_id=user.id,
@@ -940,8 +943,9 @@ class GoogleSignInRequest(BaseModel):
 
 
 @router.post("/google-verify")
-def verify_google_token(
+async def verify_google_token(
     payload: GoogleSignInRequest,
+    bg: BackgroundTasks,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1017,6 +1021,24 @@ def verify_google_token(
             },
         )
 
+        # Handle 2FA if required
+        if result.get("requires_2fa") and result.get("_2fa_code"):
+            email_service = EmailService(project_id=project.id, db=db)
+            user_name = user_info.get("name") or user_info["email"]
+            bg.add_task(
+                email_service.send_2fa_code_email,
+                to_email=result["user_email"],
+                code=result["_2fa_code"],
+                user_name=user_name,
+                app_name=project.name,
+                expiry_minutes=result["_expiry_minutes"]
+            )
+            # Remove internal fields before returning
+            return {
+                "requires_2fa": True,
+                "message": result["message"]
+            }
+
         return result
 
     except ValueError as e:
@@ -1040,8 +1062,9 @@ class AppleSignInRequest(BaseModel):
 
 
 @router.post("/apple-verify")
-def verify_apple_token(
+async def verify_apple_token(
     payload: AppleSignInRequest,
+    bg: BackgroundTasks,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1127,6 +1150,23 @@ def verify_apple_token(
             additional_data=additional_data,
         )
 
+        # Handle 2FA if required
+        if result.get("requires_2fa") and result.get("_2fa_code"):
+            email_service = EmailService(project_id=project.id, db=db)
+            user_name = user_info.get("name") or user_info["email"]
+            bg.add_task(
+                email_service.send_2fa_code_email,
+                to_email=result["user_email"],
+                code=result["_2fa_code"],
+                user_name=user_name,
+                app_name=project.name,
+                expiry_minutes=result["_expiry_minutes"]
+            )
+            return {
+                "requires_2fa": True,
+                "message": result["message"]
+            }
+
         return result
 
     except ValueError as e:
@@ -1151,8 +1191,9 @@ class GitHubSignInRequest(BaseModel):
 
 
 @router.post("/github-verify")
-def verify_github_token(
+async def verify_github_token(
     payload: GitHubSignInRequest,
+    bg: BackgroundTasks,
     proj: tuple[Project, User] = Depends(get_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1268,6 +1309,23 @@ def verify_github_token(
                 "company": user_info.get("company", ""),
             },
         )
+
+        # Handle 2FA if required
+        if result.get("requires_2fa") and result.get("_2fa_code"):
+            email_service = EmailService(project_id=project.id, db=db)
+            user_name = user_info.get("name") or user_info["email"]
+            bg.add_task(
+                email_service.send_2fa_code_email,
+                to_email=result["user_email"],
+                code=result["_2fa_code"],
+                user_name=user_name,
+                app_name=project.name,
+                expiry_minutes=result["_expiry_minutes"]
+            )
+            return {
+                "requires_2fa": True,
+                "message": result["message"]
+            }
 
         logger.info(f"GitHub authentication successful. Returning result with access_token: {bool(result.get('access_token'))}")
         return result

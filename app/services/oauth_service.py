@@ -7,7 +7,9 @@ preventing mixed authentication, and generating tokens.
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models.app_client import AppUser
+from datetime import datetime, timedelta
+from app.models.app_client import AppUser, Project
+from app.models.two_factor_auth import TwoFactorCode, TwoFactorSettings
 from app.services.jwt import create_app_user_token
 from typing import Dict, Optional
 import logging
@@ -28,6 +30,86 @@ class OAuthService:
         """
         self.db = db
         self.project_id = project_id
+        self._project = None
+
+    @property
+    def project(self) -> Optional[Project]:
+        """Lazy load project for config access."""
+        if self._project is None:
+            self._project = self.db.query(Project).filter(Project.id == self.project_id).first()
+        return self._project
+
+    def _check_2fa_required(self, user: AppUser) -> Optional[Dict]:
+        """
+        Check if 2FA is required for user and generate code if needed.
+
+        Returns:
+            Dict with requires_2fa=True if 2FA needed, None otherwise
+        """
+        project = self.project
+        if not project or not project.configs:
+            return None
+
+        if not project.configs.get('ENABLE_2FA', False):
+            return None
+
+        # Check if user has 2FA enabled
+        settings = self.db.query(TwoFactorSettings).filter(
+            TwoFactorSettings.user_id == user.id,
+            TwoFactorSettings.is_enabled == True
+        ).first()
+
+        if not settings:
+            return None
+
+        # Check if there's a recent valid 2FA verification
+        recent_verification = settings.last_verified_at and \
+            settings.last_verified_at >= datetime.utcnow() - timedelta(minutes=5)
+
+        if recent_verification:
+            # User has recently verified 2FA, allow login
+            settings.last_verified_at = None
+            self.db.commit()
+            return None
+
+        # Check for existing pending code
+        existing_code = self.db.query(TwoFactorCode).filter(
+            TwoFactorCode.user_id == user.id,
+            TwoFactorCode.project_id == self.project_id,
+            TwoFactorCode.is_used == False,
+            TwoFactorCode.created_at >= datetime.utcnow() - timedelta(minutes=2)
+        ).order_by(TwoFactorCode.created_at.desc()).first()
+
+        if existing_code and existing_code.is_valid():
+            return {
+                "requires_2fa": True,
+                "message": "2FA code already sent. Please check your email.",
+                "user_email": user.email
+            }
+
+        # Generate new 2FA code
+        otp_length = project.configs.get('OTP_LENGTH', 6)
+        otp_length = max(4, min(10, otp_length))
+        code = TwoFactorCode.generate_code(length=otp_length)
+        expiry_minutes = 10
+
+        twofa_code = TwoFactorCode(
+            user_id=user.id,
+            project_id=self.project_id,
+            code=code,
+            expires_at=datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        )
+        self.db.add(twofa_code)
+        self.db.commit()
+
+        # Return 2FA required response (caller should send email)
+        return {
+            "requires_2fa": True,
+            "message": "2FA code sent to your email",
+            "user_email": user.email,
+            "_2fa_code": code,  # Internal: caller uses this to send email
+            "_expiry_minutes": expiry_minutes
+        }
 
     def find_or_create_user(
         self,
@@ -86,8 +168,14 @@ class OAuthService:
                         detail=f"This email is already registered with {existing_user.oauth_provider.title()} Sign-In. Please use {existing_user.oauth_provider.title()} to login."
                     )
 
-                # User exists with same OAuth provider - log them in
+                # User exists with same OAuth provider - check 2FA before login
                 logger.info(f"Logging in existing {provider} user: {email}")
+
+                # Check if 2FA is required
+                twofa_response = self._check_2fa_required(existing_user)
+                if twofa_response:
+                    return twofa_response
+
                 access_token = create_app_user_token(existing_user)
 
                 return {
