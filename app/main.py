@@ -24,8 +24,9 @@ from app.api import (
     webhooks,
     oauth,
     two_factor_auth,
-    email_verification
+    email_verification,
 )
+from app.api.email_verification import standalone_router as email_verification_standalone
 
 from app.api.collections import collections
 from app.core.config import SECRET_KEY
@@ -128,6 +129,7 @@ async def shutdown_event():
 app.include_router(health.router)  # Health checks - available publicly
 app.include_router(collections.router)
 app.include_router(auth_collection.router)
+app.include_router(email_verification_standalone)  # Standalone email verification page
 
 # Include dashboard routes to main app (functional, NOT in public docs)
 # We'll manually exclude these from the OpenAPI schema

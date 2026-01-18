@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from pydantic import BaseModel
@@ -12,6 +13,9 @@ from app.services.email_service import EmailService
 from app.models.email_models import EmailTemplateTypeEnum
 
 router = APIRouter(prefix="/auth-collections/verify-email", tags=["Email Verification"])
+
+# Standalone verification router (no project dependency for frontend fallback)
+standalone_router = APIRouter(tags=["Email Verification"])
 
 
 class SendVerificationEmailRequest(BaseModel):
@@ -88,7 +92,7 @@ async def send_verification_email(
 
     if not verification_base_url:
         # Fallback to a default URL structure
-        verification_base_url = f"https://yourdomain.com/verify-email"
+        verification_base_url = f"https://api.cocobase.buzz/verify-email"
 
     verification_url = f"{verification_base_url}?token={token}"
 
@@ -221,3 +225,174 @@ async def send_verification_email_task(
     except Exception as e:
         # Log error but don't fail the request
         print(f"Error sending verification email: {str(e)}")
+
+
+def generate_verification_html(success: bool, message: str, project_name: str = "CocoBase") -> str:
+    """Generate HTML response for email verification page"""
+    status_color = "#10b981" if success else "#ef4444"
+    status_icon = "✓" if success else "✕"
+    status_text = "Verified!" if success else "Verification Failed"
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Email Verification - {project_name}</title>
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }}
+            .card {{
+                background: white;
+                border-radius: 16px;
+                padding: 48px;
+                max-width: 420px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            }}
+            .icon {{
+                width: 80px;
+                height: 80px;
+                border-radius: 50%;
+                background: {status_color};
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 24px;
+                font-size: 40px;
+                color: white;
+            }}
+            h1 {{
+                color: #1f2937;
+                font-size: 24px;
+                margin-bottom: 12px;
+            }}
+            .message {{
+                color: #6b7280;
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 32px;
+            }}
+            .app-name {{
+                color: #9ca3af;
+                font-size: 14px;
+                margin-top: 24px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="icon">{status_icon}</div>
+            <h1>{status_text}</h1>
+            <p class="message">{message}</p>
+            <p class="app-name">Powered by {project_name}</p>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@standalone_router.get("/verify-email")
+async def verify_email_frontend(
+    token: str = Query(..., description="Verification token from email"),
+    db: Session = Depends(get_db),
+):
+    """
+    Frontend route for email verification.
+    This handles verification when users click the link in their email
+    and their project doesn't have a custom VERIFICATION_URL configured.
+    """
+    # Find the token (no project filter since this is a standalone route)
+    verification_token = db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.token == token,
+        EmailVerificationToken.is_used == False
+    ).first()
+
+    if not verification_token:
+        return HTMLResponse(
+            content=generate_verification_html(
+                success=False,
+                message="This verification link is invalid or has already been used. Please request a new verification email."
+            ),
+            status_code=400
+        )
+
+    # Check if token has expired
+    if verification_token.expires_at < datetime.utcnow():
+        return HTMLResponse(
+            content=generate_verification_html(
+                success=False,
+                message="This verification link has expired. Please request a new verification email."
+            ),
+            status_code=400
+        )
+
+    # Get the user
+    user = db.query(AppUser).filter(
+        AppUser.id == verification_token.user_id,
+        AppUser.client_id == verification_token.client_id
+    ).first()
+
+    if not user:
+        return HTMLResponse(
+            content=generate_verification_html(
+                success=False,
+                message="User account not found. Please contact support."
+            ),
+            status_code=404
+        )
+
+    # Get project name for branding
+    project = db.query(Project).filter(Project.id == verification_token.client_id).first()
+    project_name = project.name if project else "CocoBase"
+
+    # Check if already verified
+    if user.email_verified:
+        return HTMLResponse(
+            content=generate_verification_html(
+                success=True,
+                message="Your email address has already been verified. You can close this page.",
+                project_name=project_name
+            )
+        )
+
+    # Mark email as verified
+    user.email_verified = True
+    user.email_verified_at = datetime.utcnow()
+
+    # Mark token as used
+    verification_token.is_used = True
+
+    db.commit()
+
+    # Check if project has a redirect URL configured
+    redirect_url = None
+    if project and project.configs:
+        redirect_url = project.configs.get('VERIFICATION_SUCCESS_URL')
+        
+    if redirect_url:
+        # Redirect to project's frontend with success status
+        separator = "&" if "?" in redirect_url else "?"
+        return RedirectResponse(url=f"{redirect_url}{separator}email_verified=true")
+
+    return HTMLResponse(
+        content=generate_verification_html(
+            success=True,
+            message="Your email address has been successfully verified! You can now close this page and continue using the app.",
+            project_name=project_name
+        )
+    )

@@ -121,8 +121,14 @@ async def send_2fa_code(
     if not settings:
         raise HTTPException(400, "2FA is not enabled for this user")
 
+    # Get OTP length from project config (default: 6, allowed: 4-10)
+    otp_length = 6
+    if project.configs:
+        otp_length = project.configs.get('OTP_LENGTH', 6)
+        otp_length = max(4, min(10, otp_length))  # Clamp between 4 and 10
+
     # Generate code
-    code = TwoFactorCode.generate_code()
+    code = TwoFactorCode.generate_code(length=otp_length)
     expiry_minutes = 10
 
     twofa_code = TwoFactorCode(

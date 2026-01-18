@@ -12,15 +12,17 @@ class TwoFactorCode(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(255), nullable=False, index=True)
     project_id = Column(String(255), nullable=False, index=True)
-    code = Column(String(6), nullable=False)  # 6-digit code
+    code = Column(String(10), nullable=False)  # Configurable length (4-10 digits)
     is_used = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     @staticmethod
-    def generate_code():
-        """Generate a 6-digit code"""
-        return f"{secrets.randbelow(1000000):06d}"
+    def generate_code(length: int = 6):
+        """Generate an OTP code with configurable length (4-10 digits)"""
+        length = max(4, min(10, length))  # Clamp between 4 and 10
+        max_value = 10 ** length
+        return f"{secrets.randbelow(max_value):0{length}d}"
 
     def is_expired(self):
         """Check if code is expired"""
