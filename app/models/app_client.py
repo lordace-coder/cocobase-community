@@ -82,6 +82,11 @@ class AppUser(Base):
     email_verified = Column(Boolean, default=False, nullable=False, server_default='false')
     email_verified_at = Column(DateTime, nullable=True)
 
+    # Phone number fields
+    phone_number = Column(String(20), nullable=True)
+    phone_verified = Column(Boolean, default=False, nullable=False, server_default='false')
+    phone_verified_at = Column(DateTime, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("client_id", "email", name="uq_client_email"),
         Index("ix_app_users_created_at", "created_at"),

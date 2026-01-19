@@ -16,7 +16,9 @@ These settings are stored in your project's `configs` JSON field and can be set 
 | `SEND_WELCOME_EMAIL` | `boolean` | `true` | Send welcome email when a new user signs up. |
 | `ENABLE_EMAIL_VERIFICATION` | `boolean` | `false` | Automatically send verification email on signup. |
 | `ENABLE_2FA` | `boolean` | `false` | Enable two-factor authentication for your project. Users can then opt-in to 2FA. |
-| `OTP_LENGTH` | `integer` | `6` | Length of OTP codes for 2FA (4-10 digits). |
+| `OTP_LENGTH` | `integer` | `6` | Length of OTP codes for 2FA and phone login (4-10 digits). |
+| `ENABLE_PHONE_LOGIN` | `boolean` | `false` | Enable login with phone number via OTP for all users in the project. |
+| `ALLOWED_SELF_ROLES` | `array` | - | List of roles users can assign to themselves during signup/update. If not set, users can assign any role. |
 
 ## Authentication Settings
 
@@ -89,6 +91,68 @@ Users can request a password reset via `POST /auth-collections/forgot-password`.
   "OTP_LENGTH": 8
 }
 ```
+
+### Phone Authentication
+
+Enable phone number login for your project via `ENABLE_PHONE_LOGIN`. When enabled:
+- Users can add a phone number to their account via `POST /auth-collections/phone/update`
+- Users can verify their phone via `POST /auth-collections/phone/send-otp` and `POST /auth-collections/phone/verify-otp`
+- Users can login with phone + OTP via `POST /auth-collections/phone/login/send-otp` and `POST /auth-collections/phone/login`
+- Phone verification is **optional** - users can login with unverified phone numbers
+
+**Configurable Options:**
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ENABLE_PHONE_LOGIN` | `boolean` | `false` | Enable phone login for the project |
+| `OTP_LENGTH` | `integer` | `6` | OTP code length (4-10 digits) |
+
+**Phone Login Flow:**
+1. User adds phone number: `POST /auth-collections/phone/update` (requires password)
+2. (Optional) User verifies phone: `POST /auth-collections/phone/send-otp` → `POST /auth-collections/phone/verify-otp`
+3. Login: `POST /auth-collections/phone/login/send-otp` → `POST /auth-collections/phone/login`
+
+**Important:** The OTP code is returned in the response for you to send via SMS. CocoBase does not send SMS directly.
+
+**Example Response from send-otp:**
+```json
+{
+  "message": "OTP generated successfully. Send this code via SMS.",
+  "phone_number": "+1234567890",
+  "code": "123456",
+  "expires_in_minutes": 10
+}
+```
+
+### User Roles
+
+Users can have roles assigned to them. You can control which roles users can assign to themselves via the `ALLOWED_SELF_ROLES` config.
+
+**Configurable Options:**
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ALLOWED_SELF_ROLES` | `array` | - | Roles users can self-assign during signup/update |
+
+**Behavior:**
+- If `ALLOWED_SELF_ROLES` is not set: Users can assign any role to themselves (backwards compatible)
+- If `ALLOWED_SELF_ROLES` is set: Users can only assign roles from this list
+
+**Example (array format):**
+```json
+{
+  "ALLOWED_SELF_ROLES": ["buyer", "seller", "creator"]
+}
+```
+
+**Example (string format):**
+```json
+{
+  "ALLOWED_SELF_ROLES": "buyer, seller, creator"
+}
+```
+
+With this config, if a user tries to signup with roles `["buyer", "admin"]`, only `["buyer"]` will be assigned since `admin` is not in the allowed list.
+
+**Security Note:** Protected roles like `admin` should NOT be included in `ALLOWED_SELF_ROLES`. Admin roles should only be assigned server-side or via the dashboard.
 
 ## Email Configuration
 

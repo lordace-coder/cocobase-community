@@ -33,7 +33,6 @@ import logging
 import secrets
 from app.services.integrations import IntegrationService
 
-logger = logging.getLogger(__name__)
 from app.services.jwt import create_app_user_token, decode_app_user_token
 from app.services.google_token_verifier import GoogleTokenVerifier
 from app.services.apple_token_verifier import AppleTokenVerifier
@@ -46,6 +45,7 @@ from app.schemas.auth_collection import (
     AppUserUpdateSchema,
 )
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth-collections", tags=["App Client"])
 
@@ -284,6 +284,16 @@ async def create_new_user(
         # Extract password and remove from data (will be hashed separately)
         password = user_data.pop("password")
 
+        # Filter roles based on ALLOWED_SELF_ROLES config
+        if "roles" in user_data and user_data["roles"]:
+            allowed_roles = project.configs.get('ALLOWED_SELF_ROLES') if project.configs else None
+            if allowed_roles is not None:
+                # Handle string format (comma-separated) or array format
+                if isinstance(allowed_roles, str):
+                    allowed_roles = [r.strip() for r in allowed_roles.split(',') if r.strip()]
+                # Filter to only include allowed roles
+                user_data["roles"] = [r for r in user_data["roles"] if r in allowed_roles]
+
         # Create new user
         user = AppUser(**user_data)
         user.set_password(password)
@@ -329,7 +339,7 @@ async def create_new_user(
                 # Get verification URL from project config
                 verification_base_url = project.configs.get('VERIFICATION_URL') or project.configs.get('FRONTEND_URL')
                 if not verification_base_url:
-                    verification_base_url = "https://yourdomain.com/verify-email"
+                    verification_base_url = "https://api.cocobase.buzz/verify-email"
 
                 verification_url = f"{verification_base_url}?token={token}"
                 user_name = user_data.get('name') or user_data.get('username') or user.email.split('@')[0]
@@ -873,6 +883,27 @@ async def update_current_user_details(
 
     # Update user fields
     if update_data:
+        # Block phone_number updates - must use /auth-collections/phone/update
+        if "phone_number" in update_data:
+            raise HTTPException(
+                400,
+                "Phone number cannot be updated here. Use /auth-collections/phone/update for secure phone updates."
+            )
+
+        # Block other phone-related fields from being modified directly
+        for blocked_field in ["phone_verified", "phone_verified_at"]:
+            update_data.pop(blocked_field, None)
+
+        # Filter roles based on ALLOWED_SELF_ROLES config
+        if "roles" in update_data and update_data["roles"]:
+            allowed_roles = project.configs.get('ALLOWED_SELF_ROLES') if project.configs else None
+            if allowed_roles is not None:
+                # Handle string format (comma-separated) or array format
+                if isinstance(allowed_roles, str):
+                    allowed_roles = [r.strip() for r in allowed_roles.split(',') if r.strip()]
+                # Filter to only include allowed roles
+                update_data["roles"] = [r for r in update_data["roles"] if r in allowed_roles]
+
         # Extract special array operations
         append_ops = update_data.pop("$append", {})
         remove_ops = update_data.pop("$remove", {})

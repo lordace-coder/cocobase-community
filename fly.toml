@@ -18,18 +18,10 @@ primary_region = 'jnb'
 
   [[http_service.checks]]
     grace_period = "10s"
-    interval = "1800s"
-    method = "GET"
-    path = "/health/database"
-    timeout = "5s"
-    type = "http"
-
-  [[http_service.checks]]
-    grace_period = "5s"
-    interval = "1800s"
+    interval = "60s"
     method = "GET"
     path = "/health/"
-    timeout = "2s"
+    timeout = "5s"
     type = "http"
 
 [[vm]]

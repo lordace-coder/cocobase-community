@@ -15,18 +15,21 @@ router = APIRouter(prefix="/auth-collections/2fa", tags=["2FA"])
 
 class Enable2FARequest(BaseModel):
     """Request to enable 2FA - user must be authenticated"""
+
     pass
 
 
 class Verify2FARequest(BaseModel):
     """Request to verify 2FA code"""
+
     email: str
     code: str
 
 
 class Send2FACodeRequest(BaseModel):
     """Request to send 2FA code"""
-    user_id: str
+
+    email: str
 
 
 @router.post("/enable")
@@ -46,19 +49,19 @@ async def enable_2fa(
     project = proj[0]
 
     # Check if 2FA is enabled for this project
-    if not project.configs or not project.configs.get('ENABLE_2FA', False):
+    if not project.configs or not project.configs.get("ENABLE_2FA", False):
         raise HTTPException(400, "2FA is not enabled for this project")
 
     # Create or update 2FA settings for the authenticated user (proj_user, not the project owner)
-    settings = db.query(TwoFactorSettings).filter(
-        TwoFactorSettings.user_id == proj_user.id
-    ).first()
+    settings = (
+        db.query(TwoFactorSettings)
+        .filter(TwoFactorSettings.user_id == proj_user.id)
+        .first()
+    )
 
     if not settings:
         settings = TwoFactorSettings(
-            user_id=proj_user.id,
-            project_id=project.id,
-            is_enabled=True
+            user_id=proj_user.id, project_id=project.id, is_enabled=True
         )
         db.add(settings)
     else:
@@ -81,9 +84,11 @@ async def disable_2fa(
         raise HTTPException(401, "Authentication required")
 
     # Find and disable 2FA settings for the authenticated user
-    settings = db.query(TwoFactorSettings).filter(
-        TwoFactorSettings.user_id == proj_user.id
-    ).first()
+    settings = (
+        db.query(TwoFactorSettings)
+        .filter(TwoFactorSettings.user_id == proj_user.id)
+        .first()
+    )
 
     if settings:
         settings.is_enabled = False
@@ -99,8 +104,6 @@ async def send_2fa_code(
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
     proj: tuple[Project, any] = Depends(get_project),
-    proj_user:  AppUser = Depends(get_app_user),
-
 ):
     """
     Send 2FA code to user's email.
@@ -108,15 +111,20 @@ async def send_2fa_code(
     """
     project = proj[0]
 
-
-    if not proj_user:
-        raise HTTPException(404, "User not found")
-
+    proj_user = (
+        db.query(AppUser)
+        .filter(AppUser.email == request.email, AppUser.client_id == project.id)
+        .first()
+    )
     # Check if 2FA is enabled for this user
-    settings = db.query(TwoFactorSettings).filter(
-        TwoFactorSettings.user_id == proj_user.id,
-        TwoFactorSettings.is_enabled == True
-    ).first()
+    settings = (
+        db.query(TwoFactorSettings)
+        .filter(
+            TwoFactorSettings.user_id == proj_user.id,
+            TwoFactorSettings.is_enabled == True,
+        )
+        .first()
+    )
 
     if not settings:
         raise HTTPException(400, "2FA is not enabled for this user")
@@ -124,7 +132,7 @@ async def send_2fa_code(
     # Get OTP length from project config (default: 6, allowed: 4-10)
     otp_length = 6
     if project.configs:
-        otp_length = project.configs.get('OTP_LENGTH', 6)
+        otp_length = project.configs.get("OTP_LENGTH", 6)
         otp_length = max(4, min(10, otp_length))  # Clamp between 4 and 10
 
     # Generate code
@@ -135,14 +143,18 @@ async def send_2fa_code(
         user_id=proj_user.id,
         project_id=project.id,
         code=code,
-        expires_at=datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        expires_at=datetime.utcnow() + timedelta(minutes=expiry_minutes),
     )
     db.add(twofa_code)
     db.commit()
 
     # Send email in background
     email_service = EmailService(project_id=project.id, db=db)
-    user_name = getattr(proj_user, 'name', None) or getattr(proj_user, 'username', None) or proj_user.email
+    user_name = (
+        getattr(proj_user, "name", None)
+        or getattr(proj_user, "username", None)
+        or proj_user.email
+    )
 
     bg.add_task(
         email_service.send_2fa_code_email,
@@ -150,7 +162,7 @@ async def send_2fa_code(
         code=code,
         user_name=user_name,
         app_name=project.name,
-        expiry_minutes=expiry_minutes
+        expiry_minutes=expiry_minutes,
     )
 
     return {"message": "2FA code sent"}
@@ -172,31 +184,43 @@ async def verify_2fa_code(
     project = proj[0]
 
     # Get user by email
-    user = db.query(AppUser).filter(
-        AppUser.email == request.email,
-        AppUser.client_id == project.id
-    ).first()
+    user = (
+        db.query(AppUser)
+        .filter(AppUser.email == request.email, AppUser.client_id == project.id)
+        .first()
+    )
 
     if not user:
         raise HTTPException(400, "Invalid email or code")
 
     # Rate limiting: Check for too many failed attempts
-    recent_attempts = db.query(TwoFactorCode).filter(
-        TwoFactorCode.user_id == user.id,
-        TwoFactorCode.project_id == project.id,
-        TwoFactorCode.created_at >= datetime.utcnow() - timedelta(minutes=15)
-    ).count()
+    recent_attempts = (
+        db.query(TwoFactorCode)
+        .filter(
+            TwoFactorCode.user_id == user.id,
+            TwoFactorCode.project_id == project.id,
+            TwoFactorCode.created_at >= datetime.utcnow() - timedelta(minutes=15),
+        )
+        .count()
+    )
 
     if recent_attempts > 10:
-        raise HTTPException(429, "Too many verification attempts. Please try again later.")
+        raise HTTPException(
+            429, "Too many verification attempts. Please try again later."
+        )
 
     # Get most recent unused code for user
-    twofa_code = db.query(TwoFactorCode).filter(
-        TwoFactorCode.user_id == user.id,
-        TwoFactorCode.project_id == project.id,
-        TwoFactorCode.code == request.code,
-        TwoFactorCode.is_used == False
-    ).order_by(TwoFactorCode.created_at.desc()).first()
+    twofa_code = (
+        db.query(TwoFactorCode)
+        .filter(
+            TwoFactorCode.user_id == user.id,
+            TwoFactorCode.project_id == project.id,
+            TwoFactorCode.code == request.code,
+            TwoFactorCode.is_used == False,
+        )
+        .order_by(TwoFactorCode.created_at.desc())
+        .first()
+    )
 
     if not twofa_code:
         raise HTTPException(400, "Invalid email or code")
@@ -208,9 +232,9 @@ async def verify_2fa_code(
     twofa_code.is_used = True
 
     # Update last verified
-    settings = db.query(TwoFactorSettings).filter(
-        TwoFactorSettings.user_id == user.id
-    ).first()
+    settings = (
+        db.query(TwoFactorSettings).filter(TwoFactorSettings.user_id == user.id).first()
+    )
     if settings:
         settings.last_verified_at = datetime.utcnow()
 
@@ -220,5 +244,5 @@ async def verify_2fa_code(
     return {
         "access_token": create_app_user_token(user),
         "user": user,
-        "message": "2FA verification successful"
+        "message": "2FA verification successful",
     }
