@@ -38,6 +38,9 @@ class CloudFunction(Base):
         Text, nullable=False
     )  # store inline code (or store a path to file/object storage)
 
+    # Function type: 'http' for traditional HTTP functions, 'websocket' for multiplayer game rooms
+    function_type = Column(String(20), nullable=False, default='http')
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

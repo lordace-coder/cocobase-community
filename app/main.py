@@ -4,6 +4,13 @@ from app.admin import *
 from app.admin.backends import authentication_backend
 from app.admin.project import ProjectModel
 from app.admin.email_sender import EmailSenderView
+from app.admin.analytics import (
+    DashboardOverview,
+    RevenueAnalyticsView,
+    UserAnalyticsView,
+    ProjectAnalyticsView,
+    SystemHealthView
+)
 from app.api import (
     ai_assistant,
     analytics,
@@ -272,3 +279,10 @@ admin.add_view(ProjectIntegrationModel)
 admin.add_view(ApiUsageCounterModel)
 admin.add_view(EmailSenderView)
 admin.add_view(DefaultEmailTemplateModel)
+
+# Add analytics views
+admin.add_view(DashboardOverview)
+admin.add_view(RevenueAnalyticsView)
+admin.add_view(UserAnalyticsView)
+admin.add_view(ProjectAnalyticsView)
+admin.add_view(SystemHealthView)
