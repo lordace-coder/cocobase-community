@@ -11,6 +11,8 @@ from app.admin.analytics import (
     ProjectAnalyticsView,
     SystemHealthView
 )
+from app.admin.sql_console import SQLConsoleView
+from app.admin.pricing import PaymentModel
 from app.api import (
     ai_assistant,
     analytics,
@@ -273,6 +275,7 @@ app.add_middleware(FullErrorMiddleware)
 admin.add_view(UserAdmin)
 admin.add_view(PricingPlanModel)
 admin.add_view(ProjectSubscriptionModel)
+admin.add_view(PaymentModel)
 admin.add_view(ProjectModel)
 admin.add_view(IntegrationsModel)
 admin.add_view(ProjectIntegrationModel)
@@ -286,3 +289,6 @@ admin.add_view(RevenueAnalyticsView)
 admin.add_view(UserAnalyticsView)
 admin.add_view(ProjectAnalyticsView)
 admin.add_view(SystemHealthView)
+
+# Add SQL Console
+admin.add_view(SQLConsoleView)
