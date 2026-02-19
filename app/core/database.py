@@ -10,8 +10,8 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 # Total connections across 2 machines: up to 20 (10 per machine)
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=5,              # 5 persistent connections per machine
-    max_overflow=5,           # Up to 5 additional = 10 max per machine
+    pool_size=10,              # 5 persistent connections per machine
+    max_overflow=10,           # Up to 5 additional = 10 max per machine
     pool_pre_ping=True,       # Check connections are alive before using
     pool_recycle=3600,        # Recycle connections after 1 hour (was 5 min)
     pool_timeout=30,          # Wait max 30 seconds for connection from pool
