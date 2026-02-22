@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My App - Login</title>
+    <style>
+      .cocobase-btn {
+        background: #667eea;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .cocobase-btn:hover {
+        background: #5568d3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Welcome to My App</h1>
+
+    <!-- Traditional login form -->
+    <form action="/login" method="POST">
+      <input type="email" name="email" placeholder="Email" />
+      <input type="password" name="password" placeholder="Password" />
+      <button type="submit">Login</button>
+    </form>
+
+    <p>OR</p>
+
+    <!-- Sign in with CocoBase button -->
+    <button class="cocobase-btn" onclick="signInWithCocoBase()">
+      🥥 Sign in with CocoBase
+    </button>
+
+    <script>
+      function signInWithCocoBase() {
+        // Generate random state for CSRF protection
+        const state = generateRandomString(32);
+        sessionStorage.setItem("oauth_state", state);
+
+        // Build authorization URL
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: "coco_ZUJh6K5ey9hh4KZfKbIPvw", // From Step 1
+          redirect_uri: "http://127.0.0.1:8000/lost",
+          scope: "openid email profile",
+          state: state,
+        });
+
+        // Redirect to CocoBase
+        window.location.href = `http://127.0.0.1:8000/oauth/authorize?${params}`;
+      }
+
+      function generateRandomString(length) {
+        const chars =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let result = "";
+        for (let i = 0; i < length; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      }
+    </script>
+  </body>
+</html>

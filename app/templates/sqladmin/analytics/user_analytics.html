@@ -1,0 +1,220 @@
+{% extends "sqladmin/analytics/base.html" %}
+
+{% block analytics_content %}
+<div class="dashboard-header">
+  <h1 class="dashboard-title">
+    <i class="fa-solid fa-users"></i>
+    User Analytics
+  </h1>
+  <p class="dashboard-subtitle">User activity, growth trends, and engagement metrics</p>
+</div>
+
+<!-- Top Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">Total Platform Users</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(total_users) }}</div>
+      <div class="metric-change text-success">
+        <i class="fa fa-arrow-up"></i>
+        +{{ new_users_30d }} last 30 days
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card success">
+      <div class="metric-label">New Users (7d)</div>
+      <div class="metric-value text-success">{{ "{:,}".format(new_users_7d) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-calendar-week"></i>
+        Weekly growth
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card info">
+      <div class="metric-label">Total App Users</div>
+      <div class="metric-value text-info">{{ "{:,}".format(total_app_users) }}</div>
+      <div class="metric-change text-success">
+        <i class="fa fa-arrow-up"></i>
+        +{{ app_users_30d }} last 30 days
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card warning">
+      <div class="metric-label">Verified Users</div>
+      <div class="metric-value text-warning">{{ "{:,}".format(verified_users) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-shield-check"></i>
+        {{ oauth_users }} OAuth
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Secondary Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="metric-card success">
+      <div class="metric-label">Users with Projects</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(users_with_projects) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-percentage"></i>
+        {{ "{:.1f}".format(users_with_projects / (total_users if total_users > 0 else 1) * 100) }}% of total users
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="metric-card info">
+      <div class="metric-label">Paying Users</div>
+      <div class="metric-value text-success">{{ "{:,}".format(users_with_subs) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-chart-line"></i>
+        {{ "{:.1f}".format(users_with_subs / (total_users if total_users > 0 else 1) * 100) }}% conversion rate
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Growth Trends -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-chart-area"></i>
+          Platform User Growth (Last 6 Months)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if user_growth %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>New Users</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for month in user_growth %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-calendar me-2 text-primary"></i>
+                  <span class="fw-bold">{{ month.month.strftime("%B %Y") }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge bg-primary">{{ "{:,}".format(month.count) }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No growth data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-users"></i>
+          App User Growth (Last 6 Months)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if app_user_growth %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>New App Users</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for month in app_user_growth %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-calendar me-2 text-info"></i>
+                  <span class="fw-bold">{{ month.month.strftime("%B %Y") }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge bg-info">{{ "{:,}".format(month.count) }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No growth data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Most Active Users -->
+<div class="row">
+  <div class="col-12">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-fire"></i>
+          Most Active Users (By Project Count)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if most_active %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Projects</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in most_active %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-user-circle me-2 text-primary"></i>
+                  <span class="fw-bold">{{ user.username }}</span>
+                </div>
+              </td>
+              <td>{{ user.email }}</td>
+              <td>
+                <span class="badge bg-success">{{ user.project_count }} projects</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No user data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,233 @@
+{% extends "sqladmin/analytics/base.html" %}
+
+{% block analytics_content %}
+<div class="dashboard-header">
+  <h1 class="dashboard-title">
+    <i class="fa-solid fa-chart-pie"></i>
+    Platform Dashboard
+  </h1>
+  <p class="dashboard-subtitle">Overview of your BaaS platform performance and key metrics</p>
+</div>
+
+<!-- Hero Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="hero-card primary">
+      <div class="metric-label">Total Users</div>
+      <div class="metric-value">{{ "{:,}".format(total_users) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-arrow-up"></i>
+        +{{ new_users_30d }} this month
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="hero-card success">
+      <div class="metric-label">Total Projects</div>
+      <div class="metric-value">{{ "{:,}".format(total_projects) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-check-circle"></i>
+        {{ active_projects }} active
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="hero-card info">
+      <div class="metric-label">Revenue (30d)</div>
+      <div class="metric-value">${{ "{:,.2f}".format(revenue_30d) }}</div>
+      <div class="metric-change">
+        ${{ "{:,.2f}".format(total_revenue) }} total
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="hero-card warning">
+      <div class="metric-label">Active Subscriptions</div>
+      <div class="metric-value">{{ "{:,}".format(active_subs) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-users"></i>
+        Paying customers
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Secondary Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">API Requests (30d)</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(api_usage_30d) }}</div>
+      <div class="metric-change text-muted">
+        <i class="fa fa-chart-line"></i>
+        Platform usage
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card success">
+      <div class="metric-label">Storage Used</div>
+      <div class="metric-value text-success">{{ "{:.2f}".format(total_storage_gb) }} GB</div>
+      <div class="metric-change text-muted">
+        <i class="fa fa-database"></i>
+        Total storage
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card info">
+      <div class="metric-label">Emails (30d)</div>
+      <div class="metric-value text-info">{{ "{:,}".format(total_emails) }}</div>
+      <div class="metric-change text-success">
+        <i class="fa fa-check"></i>
+        {{ "{:.1f}".format(email_success_rate) }}% delivered
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card warning">
+      <div class="metric-label">Conversion Rate</div>
+      <div class="metric-value text-warning">{{ "{:.1f}".format(conversion_rate) }}%</div>
+      <div class="metric-change text-muted">
+        <i class="fa fa-arrow-trend-up"></i>
+        Users to paid
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-dollar-sign"></i>
+          Recent Payments
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if recent_payments %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Amount</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in recent_payments %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-user-circle me-2 text-muted"></i>
+                  {{ payment.username }}
+                </div>
+              </td>
+              <td>
+                <span class="fw-bold text-success">${{ "{:,.2f}".format(payment.amount) }}</span>
+              </td>
+              <td>
+                <span class="text-muted">{{ payment.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No recent payments</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-user-plus"></i>
+          Recent User Signups
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if recent_users %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in recent_users %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-user me-2 text-primary"></i>
+                  <span class="fw-bold">{{ user.username }}</span>
+                </div>
+              </td>
+              <td>{{ user.email }}</td>
+              <td>
+                <span class="text-muted">{{ user.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No recent users</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row">
+  <div class="col-12">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-link"></i>
+          Detailed Analytics
+        </h3>
+      </div>
+      <div class="card-body">
+        <div class="quick-links">
+          <a href="/_/admin/revenue-analytics" class="quick-link-btn primary">
+            <i class="fa fa-chart-line"></i>
+            Revenue Details
+          </a>
+          <a href="/_/admin/user-analytics" class="quick-link-btn success">
+            <i class="fa fa-users"></i>
+            User Analytics
+          </a>
+          <a href="/_/admin/project-analytics" class="quick-link-btn info">
+            <i class="fa fa-diagram-project"></i>
+            Project Stats
+          </a>
+          <a href="/_/admin/system-health" class="quick-link-btn warning">
+            <i class="fa fa-heart-pulse"></i>
+            System Health
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

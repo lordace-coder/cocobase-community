@@ -1,0 +1,208 @@
+{% extends "sqladmin/analytics/base.html" %}
+
+{% block analytics_content %}
+<div class="dashboard-header">
+  <h1 class="dashboard-title">
+    <i class="fa-solid fa-heart-pulse"></i>
+    Platform Health
+  </h1>
+  <p class="dashboard-subtitle">High-level platform metrics and system health monitoring</p>
+</div>
+
+<!-- Top Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">Total Functions</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(total_functions) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-code"></i>
+        Across all projects
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card success">
+      <div class="metric-label">Executions (24h)</div>
+      <div class="metric-value text-success">{{ "{:,}".format(executions_24h) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-chart-line"></i>
+        {{ "{:,}".format(total_executions) }} total
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card info">
+      <div class="metric-label">Platform Success Rate</div>
+      <div class="metric-value text-info">{{ "{:.1f}".format(success_rate) }}%</div>
+      <div class="metric-change">
+        <i class="fa fa-check-circle"></i>
+        Function execution health
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card warning">
+      <div class="metric-label">Active Cron Jobs</div>
+      <div class="metric-value text-warning">{{ "{:,}".format(active_cron_jobs) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-clock"></i>
+        {{ total_cron_jobs }} total
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Secondary Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">Cron Runs (24h)</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(cron_runs_24h) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-calendar-check"></i>
+        Scheduled tasks
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card info">
+      <div class="metric-label">Emails (24h)</div>
+      <div class="metric-value text-info">{{ "{:,}".format(emails_24h) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-envelope"></i>
+        {{ "{:,}".format(total_emails) }} total
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card success">
+      <div class="metric-label">Email Success Rate</div>
+      <div class="metric-value text-success">{{ "{:.1f}".format(email_success_rate) }}%</div>
+      <div class="metric-change text-danger">
+        <i class="fa fa-exclamation-circle"></i>
+        {{ failed_emails }} failed
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">Total App Users</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(total_app_users) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-users"></i>
+        Across all projects
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Trends -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-chart-area"></i>
+          Function Executions (Last 7 Days)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if daily_executions %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Executions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for day in daily_executions %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-calendar me-2 text-primary"></i>
+                  <span class="fw-bold">{{ day.day.strftime("%Y-%m-%d") }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge bg-primary">{{ "{:,}".format(day.count) }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No execution data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-envelope-open"></i>
+          Email Delivery (Last 7 Days)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if daily_emails %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Emails Sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for day in daily_emails %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-calendar me-2 text-info"></i>
+                  <span class="fw-bold">{{ day.day.strftime("%Y-%m-%d") }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge bg-info">{{ "{:,}".format(day.count) }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No email data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Additional Metrics -->
+<div class="row">
+  <div class="col-lg-4">
+    <div class="metric-card info">
+      <div class="metric-label">Total Collections</div>
+      <div class="metric-value text-primary">{{ "{:,}".format(total_collections) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-database"></i>
+        Database collections
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

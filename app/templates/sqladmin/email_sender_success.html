@@ -1,0 +1,60 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body text-center py-5">
+      {% if fail_count == 0 %}
+      <div class="mb-4">
+        <i class="fa fa-check-circle text-success" style="font-size: 64px;"></i>
+      </div>
+      <h2 class="text-success mb-3">Emails Sent Successfully!</h2>
+      <p class="text-muted mb-4">
+        All {{ success_count }} email(s) have been sent successfully.
+      </p>
+      {% else %}
+      <div class="mb-4">
+        <i class="fa fa-exclamation-triangle text-warning" style="font-size: 64px;"></i>
+      </div>
+      <h2 class="text-warning mb-3">Emails Sent with Some Errors</h2>
+      <div class="row justify-content-center mb-4">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-body">
+              <div class="row">
+                <div class="col-6">
+                  <div class="text-success">
+                    <i class="fa fa-check-circle me-2"></i>
+                    <strong>{{ success_count }}</strong> successful
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="text-danger">
+                    <i class="fa fa-times-circle me-2"></i>
+                    <strong>{{ fail_count }}</strong> failed
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="text-muted">
+        Total: {{ total }} email(s) processed
+      </p>
+      {% endif %}
+
+      <div class="mt-4">
+        <a href="/admin/email-users" class="btn btn-primary me-2">
+          <i class="fa fa-envelope me-2"></i>
+          Send Another Email
+        </a>
+        <a href="/admin" class="btn btn-secondary">
+          <i class="fa fa-home me-2"></i>
+          Back to Dashboard
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

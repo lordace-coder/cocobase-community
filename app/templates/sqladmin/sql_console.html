@@ -1,0 +1,351 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<style>
+  .sql-console {
+    padding: 2rem;
+    background: #f8f9fa;
+    min-height: 100vh;
+  }
+
+  .console-header {
+    margin-bottom: 2rem;
+  }
+
+  .query-editor {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .query-textarea {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 2px solid #dee2e6;
+    border-radius: 6px;
+    padding: 1rem;
+    resize: vertical;
+    min-height: 200px;
+  }
+
+  .query-textarea:focus {
+    border-color: #0d6efd;
+    outline: none;
+    box-shadow: 0 0 0 0.25rem rgba(13,110,253,.25);
+  }
+
+  .execute-btn {
+    padding: 0.75rem 2rem;
+    font-weight: 600;
+    border-radius: 6px;
+  }
+
+  .results-container {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .results-table {
+    width: 100%;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+  }
+
+  .results-table thead th {
+    background: #f8f9fa;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    color: #495057;
+    padding: 1rem;
+    border-bottom: 2px solid #dee2e6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .results-table tbody td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e9ecef;
+    vertical-align: top;
+  }
+
+  .results-table tbody tr:hover {
+    background-color: #f8f9fa;
+  }
+
+  .results-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .table-wrapper {
+    max-height: 600px;
+    overflow: auto;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+  }
+
+  .security-notice {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .example-queries {
+    background: #e7f3ff;
+    border: 1px solid #0dcaf0;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+
+  .example-query {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    background: white;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    margin: 0.5rem 0;
+    cursor: pointer;
+    border: 1px solid #0dcaf0;
+    transition: all 0.2s;
+  }
+
+  .example-query:hover {
+    background: #f8f9fa;
+    transform: translateX(4px);
+  }
+
+  .null-value {
+    color: #6c757d;
+    font-style: italic;
+  }
+
+  .stats-bar {
+    display: flex;
+    gap: 2rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #212529;
+  }
+</style>
+
+<div class="sql-console">
+  <div class="console-header">
+    <h1>
+      <i class="fa-solid fa-terminal me-2"></i>
+      SQL Console
+    </h1>
+    <p class="text-muted">Execute read-only SQL queries against your database</p>
+  </div>
+
+  <!-- Security Notice -->
+  <div class="security-notice">
+    <h6 class="mb-2">
+      <i class="fa fa-shield-halved me-2"></i>
+      <strong>Read-Only Mode</strong>
+    </h6>
+    <p class="mb-0">
+      This console only allows SELECT queries. All modification operations (INSERT, UPDATE, DELETE, DROP, etc.) are blocked for security.
+    </p>
+  </div>
+
+  <!-- Query Editor -->
+  <div class="query-editor">
+    <form method="POST">
+      <div class="mb-3">
+        <label for="query" class="form-label fw-bold">
+          <i class="fa fa-code me-2"></i>SQL Query
+        </label>
+        <textarea
+          class="form-control query-textarea"
+          id="query"
+          name="query"
+          placeholder="SELECT * FROM users LIMIT 10;"
+          required>{{ query }}</textarea>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center">
+        <button type="submit" class="btn btn-primary execute-btn">
+          <i class="fa fa-play me-2"></i>
+          Execute Query
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('query').value = ''">
+          <i class="fa fa-eraser me-2"></i>
+          Clear
+        </button>
+      </div>
+    </form>
+
+    <!-- Example Queries -->
+    <div class="example-queries mt-3">
+      <h6 class="mb-2">
+        <i class="fa fa-lightbulb me-2"></i>
+        <strong>Example Queries</strong>
+      </h6>
+      <div class="example-query" onclick="setQuery(this.textContent.trim())">
+        SELECT * FROM users ORDER BY created_at DESC LIMIT 10;
+      </div>
+      <div class="example-query" onclick="setQuery(this.textContent.trim())">
+        SELECT COUNT(*) as total_users, confirmed_email FROM users GROUP BY confirmed_email;
+      </div>
+      <div class="example-query" onclick="setQuery(this.textContent.trim())">
+        SELECT p.name, u.username, ps.is_active FROM projects p JOIN users u ON p.user_id = u.id LEFT JOIN project_subscriptions ps ON ps.project_id = p.id LIMIT 20;
+      </div>
+      <div class="example-query" onclick="setQuery(this.textContent.trim())">
+        SELECT status, COUNT(*) as count, SUM(amount) as total_amount FROM payments GROUP BY status;
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  {% if error %}
+  <div class="alert alert-danger" role="alert">
+    <i class="fa fa-exclamation-triangle me-2"></i>
+    <strong>Error:</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  {% if success_message %}
+  <div class="alert alert-success" role="alert">
+    <i class="fa fa-check-circle me-2"></i>
+    {{ success_message }}
+  </div>
+  {% endif %}
+
+  {% if results or (success_message and result_count == 0) %}
+  <div class="results-container">
+    <h5 class="mb-3">
+      <i class="fa fa-table me-2"></i>
+      Query Results
+    </h5>
+
+    {% if results %}
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <i class="fa fa-list-ol text-primary"></i>
+        <div>
+          <div class="stat-label">Rows</div>
+          <div class="stat-value">{{ result_count }}</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fa fa-columns text-success"></i>
+        <div>
+          <div class="stat-label">Columns</div>
+          <div class="stat-value">{{ columns|length }}</div>
+        </div>
+      </div>
+      {% if execution_time %}
+      <div class="stat-item">
+        <i class="fa fa-clock text-info"></i>
+        <div>
+          <div class="stat-label">Execution Time</div>
+          <div class="stat-value">{{ execution_time }}ms</div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Results Table -->
+    <div class="table-wrapper">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            {% for column in columns %}
+            <th>{{ column }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in results %}
+          <tr>
+            <td class="text-muted">{{ loop.index }}</td>
+            {% for column in columns %}
+            <td>
+              {% if row[column] is none %}
+                <span class="null-value">NULL</span>
+              {% elif row[column] is boolean %}
+                {% if row[column] %}
+                  <span class="badge bg-success">TRUE</span>
+                {% else %}
+                  <span class="badge bg-secondary">FALSE</span>
+                {% endif %}
+              {% else %}
+                {{ row[column] }}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="fa fa-inbox fa-3x mb-3 opacity-50"></i>
+      <p>Query executed successfully but returned no rows.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function setQuery(query) {
+  document.getElementById('query').value = query;
+  document.getElementById('query').focus();
+}
+
+// Auto-resize textarea
+const textarea = document.getElementById('query');
+if (textarea) {
+  textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.max(200, this.scrollHeight) + 'px';
+  });
+}
+
+// Keyboard shortcut: Ctrl+Enter to execute
+document.getElementById('query').addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    this.form.submit();
+  }
+});
+</script>
+{% endblock %}

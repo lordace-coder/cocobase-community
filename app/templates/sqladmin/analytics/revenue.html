@@ -1,0 +1,221 @@
+{% extends "sqladmin/analytics/base.html" %}
+
+{% block analytics_content %}
+<div class="dashboard-header">
+  <h1 class="dashboard-title">
+    <i class="fa-solid fa-chart-line"></i>
+    Revenue Analytics
+  </h1>
+  <p class="dashboard-subtitle">Detailed revenue insights, payment trends, and subscription metrics</p>
+</div>
+
+<!-- Top Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card primary">
+      <div class="metric-label">Total Revenue</div>
+      <div class="metric-value text-primary">${{ "{:,.2f}".format(total_revenue) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-money-bill-wave"></i>
+        {{ total_payments }} successful payments
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card success">
+      <div class="metric-label">Last 30 Days</div>
+      <div class="metric-value text-success">${{ "{:,.2f}".format(revenue_30d) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-calendar-days"></i>
+        Monthly revenue
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card info">
+      <div class="metric-label">Last 7 Days</div>
+      <div class="metric-value text-info">${{ "{:,.2f}".format(revenue_7d) }}</div>
+      <div class="metric-change">
+        <i class="fa fa-calendar-week"></i>
+        Weekly revenue
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3 col-md-6">
+    <div class="metric-card warning">
+      <div class="metric-label">Average Payment</div>
+      <div class="metric-value text-warning">${{ "{:,.2f}".format(avg_payment) }}</div>
+      <div class="metric-change text-danger">
+        <i class="fa fa-times-circle"></i>
+        {{ failed_payments }} failed
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Subscriptions -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="metric-card success">
+      <div class="metric-label">Active Subscriptions</div>
+      <div class="metric-value text-success">{{ "{:,}".format(active_subs) }}</div>
+      <div class="metric-change text-danger">
+        <i class="fa fa-exclamation-triangle"></i>
+        {{ expired_subs }} expired in last 30 days
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Top Paying Users & Revenue by Plan -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-crown"></i>
+          Top 10 Paying Users
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if top_users %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Total Spent</th>
+              <th>Payments</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in top_users %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-user-circle me-2 text-primary"></i>
+                  <span class="fw-bold">{{ user.username }}</span>
+                </div>
+              </td>
+              <td>{{ user.email }}</td>
+              <td>
+                <span class="fw-bold text-success">${{ "{:,.2f}".format(user.total_spent) }}</span>
+              </td>
+              <td>
+                <span class="badge bg-primary">{{ user.payment_count }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No payment data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-box"></i>
+          Revenue by Plan
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if revenue_by_plan %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Revenue</th>
+              <th>Payments</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for plan in revenue_by_plan %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-star me-2 text-warning"></i>
+                  <span class="fw-bold">{{ plan.name }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="fw-bold text-success">${{ "{:,.2f}".format(plan.revenue) }}</span>
+              </td>
+              <td>
+                <span class="badge bg-info">{{ plan.payment_count }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No plan data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Monthly Revenue Trend -->
+<div class="row">
+  <div class="col-12">
+    <div class="data-card">
+      <div class="data-card-header">
+        <h3 class="data-card-title">
+          <i class="fa fa-chart-area"></i>
+          Monthly Revenue Trend (Last 6 Months)
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        {% if monthly_revenue %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Revenue</th>
+              <th>Payments</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for month in monthly_revenue %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-calendar me-2 text-info"></i>
+                  <span class="fw-bold">{{ month.month.strftime("%B %Y") }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="fw-bold text-success">${{ "{:,.2f}".format(month.revenue) }}</span>
+              </td>
+              <td>
+                <span class="badge bg-primary">{{ month.count }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <i class="fa fa-inbox"></i>
+          <p>No monthly data available</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
