@@ -47,11 +47,12 @@ from app.core.database import engine
 from app.core.scheduler import start_scheduler, stop_scheduler
 import traceback
 from app import events
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqladmin import Admin
 import logging
+import os
 from starlette.middleware.sessions import SessionMiddleware
 
 logger = logging.getLogger(__name__)
@@ -292,3 +293,29 @@ admin.add_view(SystemHealthView)
 
 # Add SQL Console
 admin.add_view(SQLConsoleView)
+
+
+# ─── Dashboard UI (SvelteKit static build) ───────────────────────────────────
+_DASHBOARD_BUILD = os.path.join(os.path.dirname(__file__), "..", "dashboard", "build")
+
+
+@app.get("/_/ui", include_in_schema=False)
+@app.get("/_/ui/{full_path:path}", include_in_schema=False)
+async def serve_dashboard_ui(full_path: str = ""):
+    """Serve the SvelteKit dashboard SPA from dashboard/build."""
+    build_dir = os.path.abspath(_DASHBOARD_BUILD)
+
+    if full_path:
+        requested = os.path.normpath(os.path.join(build_dir, full_path))
+        # Guard against path traversal
+        if requested.startswith(build_dir) and os.path.isfile(requested):
+            return FileResponse(requested)
+
+    index = os.path.join(build_dir, "index.html")
+    if os.path.isfile(index):
+        return FileResponse(index)
+
+    return JSONResponse(
+        {"error": "Dashboard not built. Run: cd dashboard && npm run build"},
+        status_code=503,
+    )

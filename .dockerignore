@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Dashboard (node_modules are installed inside the builder stage)
+dashboard/node_modules/
+dashboard/.svelte-kit/
+dashboard/build/
+
+# Git & IDE
+.git/
+.gitignore
+.env
+.env.*
+*.md
+
+# Misc
+.DS_Store
