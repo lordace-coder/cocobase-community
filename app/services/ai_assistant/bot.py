@@ -9,9 +9,10 @@ documentation="use trainin data"
 
 # System prompt that defines the bot's role and provides context
 # Only include documentation section if not using fine-tuned model
+_doc_section = f"DOCUMENTATION:\n{documentation}\n\n" if documentation else ""
 SYSTEM_PROMPT = f"""You are CocoBase Bot, expert at writing CocoBase Cloud Functions.
 
-{f"DOCUMENTATION:\n{documentation}\n\n" if documentation else ""}CRITICAL RULES:
+{_doc_section}CRITICAL RULES:
 1. NEVER write import statements - all libraries are pre-imported
 2. All functions MUST have main() that returns dict
 3. Use 'db' object for database operations (auto-scoped to project)
