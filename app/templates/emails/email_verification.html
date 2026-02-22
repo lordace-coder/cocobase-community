@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verify Your Email - Cocobase</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background-color: #f5f5f5;
+        padding: 20px;
+      }
+      .email-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        background: linear-gradient(135deg, #ff7a45 0%, #ff6b35 100%);
+        padding: 40px 30px;
+        text-align: center;
+      }
+      .logo {
+        max-width: 180px;
+        height: auto;
+        margin: 0 auto 10px;
+        display: block;
+      }
+      .header-text {
+        color: #ffffff;
+        font-size: 18px;
+        opacity: 0.95;
+      }
+      .content {
+        padding: 40px 30px;
+      }
+      .welcome-icon {
+        text-align: center;
+        font-size: 64px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        color: #1f2937;
+        font-size: 28px;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      p {
+        color: #4b5563;
+        font-size: 16px;
+        line-height: 1.6;
+        margin-bottom: 20px;
+      }
+      .verify-button {
+        display: inline-block;
+        background: linear-gradient(135deg, #ff7a45 0%, #ff6b35 100%);
+        color: #ffffff;
+        text-decoration: none;
+        padding: 16px 40px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 16px;
+        margin: 20px 0;
+        transition: transform 0.2s;
+      }
+      .verify-button:hover {
+        transform: translateY(-2px);
+      }
+      .button-container {
+        text-align: center;
+        margin: 30px 0;
+      }
+      .benefits {
+        background-color: #f9fafb;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 30px 0;
+      }
+      .benefits-title {
+        color: #1f2937;
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .benefit-item {
+        display: flex;
+        align-items: start;
+        margin-bottom: 14px;
+      }
+      .benefit-item:last-child {
+        margin-bottom: 0;
+      }
+      .benefit-icon {
+        width: 24px;
+        height: 24px;
+        background-color: #ff7a45;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        margin-right: 12px;
+        flex-shrink: 0;
+        margin-top: 2px;
+        font-size: 14px;
+      }
+      .benefit-text {
+        color: #374151;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .expiry-notice {
+        background-color: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        border-radius: 6px;
+        padding: 16px 20px;
+        margin: 25px 0;
+      }
+      .expiry-notice p {
+        color: #92400e;
+        font-size: 14px;
+        margin-bottom: 0;
+      }
+      .expiry-time {
+        font-weight: 600;
+      }
+      .alt-link {
+        background-color: #f9fafb;
+        border: 1px dashed #d1d5db;
+        border-radius: 6px;
+        padding: 16px;
+        margin: 20px 0;
+        word-break: break-all;
+      }
+      .alt-link p {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 8px;
+      }
+      .alt-link a {
+        color: #ff7a45;
+        font-size: 13px;
+        text-decoration: none;
+      }
+      .security-notice {
+        border-top: 2px solid #e5e7eb;
+        padding-top: 25px;
+        margin-top: 30px;
+        text-align: center;
+      }
+      .security-notice p {
+        font-size: 14px;
+        color: #6b7280;
+      }
+      .footer {
+        background-color: #f9fafb;
+        padding: 30px;
+        text-align: center;
+        color: #6b7280;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .footer a {
+        color: #ff7a45;
+        text-decoration: none;
+      }
+      .footer a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="header">
+        <img
+          src="https://www.cocobase.buzz/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Flogo.e4c068de.png&w=640&q=75"
+          alt="Cocobase Logo"
+          class="logo"
+        />
+        <div class="header-text">Verify Your Email Address</div>
+      </div>
+
+      <div class="content">
+        <div class="welcome-icon">✉️</div>
+        <h1>Verify Your Email Address</h1>
+
+        <p>Hi {{username}},</p>
+
+        <p>
+          Welcome to Cocobase! We're excited to have you on board. To get
+          started and unlock all features, please verify your email address by
+          clicking the button below:
+        </p>
+
+        <div class="button-container">
+          <a href="{{verification_link}}" class="verify-button"
+            >Verify My Email</a
+          >
+        </div>
+
+        <div class="expiry-notice">
+          <p>
+            ⏰ This verification link will expire in
+            <span class="expiry-time">24 hours</span> for security reasons.
+          </p>
+        </div>
+
+        <div class="alt-link">
+          <p>
+            If the button doesn't work, copy and paste this link into your
+            browser:
+          </p>
+          <a href="{{verification_link}}">{{verification_link}}</a>
+        </div>
+
+        <div class="benefits">
+          <div class="benefits-title">What happens after verification?</div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✓</div>
+            <div class="benefit-text">
+              <strong>Full Account Access</strong> - Access all Cocobase
+              features and services
+            </div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✓</div>
+            <div class="benefit-text">
+              <strong>Enhanced Security</strong> - Protect your account with
+              verified email authentication
+            </div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✓</div>
+            <div class="benefit-text">
+              <strong>Important Updates</strong> - Receive notifications about
+              your projects and account
+            </div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✓</div>
+            <div class="benefit-text">
+              <strong>Password Recovery</strong> - Reset your password anytime
+              if needed
+            </div>
+          </div>
+        </div>
+
+        <div class="security-notice">
+          <p style="font-weight: 600; color: #1f2937; margin-bottom: 10px">
+            Didn't create a Cocobase account?
+          </p>
+          <p>
+            If you didn't sign up for Cocobase, you can safely ignore this
+            email. Your email address will not be used without verification.
+          </p>
+          <p style="margin-top: 15px">
+            Need help?
+            <a
+              href="#"
+              style="color: #ff7a45; text-decoration: none; font-weight: 500"
+              >Contact our support team</a
+            >
+          </p>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p><strong>Cocobase</strong> - Your Backend as a Service</p>
+        <p style="margin-top: 10px">
+          <a href="#">Privacy Policy</a> • <a href="#">Terms of Service</a> •
+          <a href="#">Support</a>
+        </p>
+        <p style="margin-top: 15px; font-size: 13px">
+          © 2025 Cocobase. All rights reserved.<br />
+          This is an automated email, please do not reply to this message.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

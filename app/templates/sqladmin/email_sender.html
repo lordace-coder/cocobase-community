@@ -1,0 +1,101 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Send Email to Users</h3>
+    </div>
+    <div class="card-body">
+      {% if error %}
+      <div class="alert alert-danger" role="alert">
+        <i class="fa fa-exclamation-circle"></i>
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST">
+        <!-- Recipient Selection -->
+        <div class="mb-3">
+          <label class="form-label required">Recipients</label>
+          <div class="form-selectgroup">
+            <label class="form-selectgroup-item">
+              <input type="radio" name="recipient_type" value="all" class="form-selectgroup-input" checked onchange="toggleUserSelection()">
+              <span class="form-selectgroup-label">
+                <i class="fa fa-users me-2"></i>
+                All Users ({{ users|length }})
+              </span>
+            </label>
+            <label class="form-selectgroup-item">
+              <input type="radio" name="recipient_type" value="selected" class="form-selectgroup-input" onchange="toggleUserSelection()">
+              <span class="form-selectgroup-label">
+                <i class="fa fa-user me-2"></i>
+                Select Specific Users
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- User Selection (hidden by default) -->
+        <div class="mb-3" id="user-selection" style="display: none;">
+          <label class="form-label">Select Users</label>
+          <div class="card" style="max-height: 300px; overflow-y: auto;">
+            <div class="card-body">
+              <div class="form-check-list">
+                {% for user in users %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="selected_users" value="{{ user.id }}" id="user_{{ user.id }}">
+                  <label class="form-check-label" for="user_{{ user.id }}">
+                    <strong>{{ user.username or user.full_name or 'Unknown' }}</strong>
+                    <span class="text-muted ms-2">{{ user.email }}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <small class="form-hint">Select users who will receive this email</small>
+        </div>
+
+        <!-- Email Subject -->
+        <div class="mb-3">
+          <label class="form-label required">Subject</label>
+          <input type="text" class="form-control" name="subject" placeholder="Enter email subject" required>
+        </div>
+
+        <!-- Email Message -->
+        <div class="mb-3">
+          <label class="form-label required">Message</label>
+          <textarea class="form-control" name="message" rows="10" placeholder="Enter your message here..." required></textarea>
+          <small class="form-hint">This message will be sent using your existing email template</small>
+        </div>
+
+        <!-- Submit Buttons -->
+        <div class="d-flex justify-content-between">
+          <a href="/admin" class="btn btn-secondary">
+            <i class="fa fa-arrow-left me-2"></i>
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa fa-paper-plane me-2"></i>
+            Send Email
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleUserSelection() {
+  const selectedRadio = document.querySelector('input[name="recipient_type"]:checked');
+  const userSelection = document.getElementById('user-selection');
+
+  if (selectedRadio && selectedRadio.value === 'selected') {
+    userSelection.style.display = 'block';
+  } else {
+    userSelection.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}
