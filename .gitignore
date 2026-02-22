@@ -27,3 +27,8 @@ instance/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Dashboard (SvelteKit)
+dashboard/node_modules/
+dashboard/.svelte-kit/
+dashboard/build/
